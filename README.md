@@ -20,8 +20,7 @@ Download the archive for your system from the [releases page](../../releases) an
 Each archive holds one self-contained binary and a `.sha256` file lies next to it. On macOS, remove the download
 quarantine once (`xattr -d com.apple.quarantine lean11`) or allow it under System Settings, Privacy & Security.
 
-Or build it yourself with Rust 1.85 or newer: `cargo build --release --locked` (the binary is
-`target/release/lean11`).
+Or build it yourself, see [Build from source](#build-from-source).
 
 On Windows, `lean11.exe` needs no installer and no administrator rights. Run it in Windows Terminal or
 PowerShell (`lean11.exe tui`, `lean11.exe build …`). The working folder must be on NTFS (hard links); Defender
@@ -139,8 +138,27 @@ its job folder. Core images cannot be updated or serviced: use them only in test
 
 ## Build from source
 
-Requirements (Debian 13): Rust 1.96 or newer (rustup); at runtime `wimtools` and `fuse3`.
+Requirements: Rust 1.96 or newer (rustup) and a C compiler (for the TLS library). There are no
+runtime dependencies; `wimtools` and `fuse3` are only needed for the fallback `LEAN11_WIMLIB=1`.
 
 ```sh
 cargo build --release --locked
 ```
+
+## License
+
+Copyright (C) 2026 solisinvictum
+
+lean11 is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option)
+any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
+implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+
+In short: whoever distributes lean11 or a work based on it, or lets others use a modified version over a network
+(for example as a web service), has to make the complete corresponding source code available under the same
+license.
+
+Included third-party code keeps its own license: the XPRESS, LZX and LZMS compressors in `crates/lean11-codecs`
+are translated from wimlib (LGPL-2.1-or-later and MIT, see that crate's README); the MSDelta decoder comes from
+[msdelta](https://github.com/jlevere/msdelta) (MIT OR Apache-2.0). lean11 is not affiliated with Microsoft;
+Windows is a trademark of Microsoft Corporation.
