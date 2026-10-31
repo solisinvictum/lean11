@@ -1,0 +1,20 @@
+[package]
+name = "lean11-wim"
+description = "WIM/ESD reading, extraction and writing (native), mount through wimlib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+wim-format.workspace = true
+lean11-codecs.workspace = true
+sha1.workspace = true
+uuid.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_SystemInformation"] }

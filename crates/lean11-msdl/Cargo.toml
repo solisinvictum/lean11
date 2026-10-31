@@ -1,0 +1,21 @@
+[package]
+name = "lean11-msdl"
+description = "Official Windows 11 ISO download from Microsoft"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+regex.workspace = true
+log.workspace = true
+ureq.workspace = true
+uuid.workspace = true
+zip.workspace = true
+rusqlite.workspace = true
+yaml_serde.workspace = true
+miniz_oxide.workspace = true

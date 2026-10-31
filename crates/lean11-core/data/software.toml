@@ -1,0 +1,106 @@
+# lean11 software catalog: programs that can be added to the image. They are resolved at build time from
+# the winget catalog (latest version, the vendor's download URL and its SHA-256), downloaded, verified,
+# placed in the image and installed silently and machine-wide at the end of setup (SetupComplete, SYSTEM).
+#
+# winget: package ids, first match wins; `{lang}` is replaced by the image language (de-DE, then de).
+# extra_args: arguments added to the winget manifest's silent switches.
+# kind = "scoop": not a winget package; installed per user at sign-in (needs internet then).
+
+[[program]]
+id = "chrome"
+name = "Google Chrome"
+category = "Browsers"
+winget = ["Google.Chrome"]
+description = "Google's browser (Chromium with Google services, sync and automatic updates). Proprietary; sends usage statistics and crash reports unless turned off."
+
+[[program]]
+id = "firefox"
+name = "Mozilla Firefox"
+category = "Browsers"
+winget = ["Mozilla.Firefox.{lang}", "Mozilla.Firefox"]
+description = "Mozilla's open source browser (Gecko engine), in the image language where Mozilla offers it. Updates itself in the background."
+
+[[program]]
+id = "librewolf"
+name = "LibreWolf"
+category = "Browsers"
+winget = ["LibreWolf.LibreWolf"]
+description = "Firefox build with telemetry removed, uBlock Origin included and stricter privacy defaults. No automatic updates (use its WinUpdater or a package manager)."
+
+[[program]]
+id = "opera"
+name = "Opera"
+category = "Browsers"
+winget = ["Opera.Opera"]
+extra_args = "--launchopera=0 --setdefaultbrowser=0"
+description = "Chromium based browser from Opera with built-in VPN proxy, ad blocker and sidebar messengers. Proprietary."
+
+[[program]]
+id = "brave"
+name = "Brave"
+category = "Browsers"
+winget = ["Brave.Brave"]
+description = "Chromium based browser with built-in ad and tracker blocking (Brave Shields). Open source; Brave Rewards and its crypto wallet are optional."
+
+[[program]]
+id = "vivaldi"
+name = "Vivaldi"
+category = "Browsers"
+winget = ["Vivaldi.Vivaldi"]
+description = "Chromium based browser with tab stacking, built-in mail, calendar and feed reader and a very configurable interface. Proprietary interface, no tracking."
+
+[[program]]
+id = "thunderbird"
+name = "Mozilla Thunderbird"
+category = "Mail"
+winget = ["Mozilla.Thunderbird.{lang}", "Mozilla.Thunderbird"]
+description = "Mozilla's mail, calendar and contacts client (IMAP, POP, Exchange via add-ons), in the image language where Mozilla offers it."
+
+[[program]]
+id = "betterbird"
+name = "Betterbird"
+category = "Mail"
+winget = ["Betterbird.Betterbird"]
+description = "Thunderbird ESR with extra fixes and features (multi-line message list, better search, Windows notifications). Same profile format as Thunderbird."
+
+[[program]]
+id = "vlc"
+name = "VLC media player"
+category = "Media and graphics"
+winget = ["VideoLAN.VLC"]
+description = "Plays nearly every audio and video format, DVDs and network streams without extra codecs. Open source."
+
+[[program]]
+id = "irfanview"
+name = "IrfanView"
+category = "Media and graphics"
+winget = ["IrfanSkiljan.IrfanView"]
+description = "Fast image viewer with batch conversion, simple editing and screenshots. Free for private and non-commercial use only."
+
+[[program]]
+id = "gimp"
+name = "GIMP"
+category = "Media and graphics"
+winget = ["GIMP.GIMP.3", "GIMP.GIMP"]
+description = "Open source image editor (layers, masks, filters, painting), an alternative to Photoshop."
+
+[[program]]
+id = "unigetui"
+name = "UniGetUI"
+category = "Package managers"
+winget = ["Devolutions.UniGetUI"]
+description = "Graphical front end for winget, Scoop, Chocolatey, pip, npm and more: search, install and update programs in one place."
+
+[[program]]
+id = "chocolatey"
+name = "Chocolatey"
+category = "Package managers"
+winget = ["Chocolatey.Chocolatey"]
+description = "Command line package manager (`choco install ...`) with a large community repository. Installs machine-wide; packages need internet."
+
+[[program]]
+id = "scoop"
+name = "Scoop"
+category = "Package managers"
+kind = "scoop"
+description = "Command line package manager that installs programs into the user profile without admin rights (`scoop install ...`). Set up for each account at its first sign-in; needs internet then (retried at every sign-in until it succeeds)."

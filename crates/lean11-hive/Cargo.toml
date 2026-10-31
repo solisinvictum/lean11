@@ -1,0 +1,9 @@
+[package]
+name = "lean11-hive"
+description = "Offline Windows registry hives (regf), pure Rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true

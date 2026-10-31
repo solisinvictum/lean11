@@ -1,0 +1,2344 @@
+# lean11 privacy catalog. Format and rules: docs/PRIVACY.md.
+#
+# Levels: recommended = no visible feature lost; strict = costs a feature (named in the description);
+# optional = special cases. `verified` names the evidence for Windows 11 26H2 (ADMX = the policy
+# template shipped in the image's PolicyDefinitions, checked by `lean11 privacy verify`).
+
+# ---------------------------------------------------------------------------------------------------
+[[category]]
+id = "data-collection"
+title = "Data collection"
+
+[[category]]
+id = "telemetry"
+title = "Diagnostic data (telemetry)"
+parent = "data-collection"
+
+[[category]]
+id = "ceip"
+title = "Customer Experience Improvement Program"
+parent = "data-collection"
+
+[[category]]
+id = "app-compat"
+title = "Application compatibility telemetry"
+parent = "data-collection"
+
+[[category]]
+id = "error-reporting"
+title = "Error reporting"
+parent = "data-collection"
+
+# --- telemetry ---------------------------------------------------------------------------------------
+
+[[setting]]
+id = "diagnostic-data-off"
+category = "telemetry"
+title = "Diagnostic data: lowest level"
+description = """Sets the Group Policy "Allow diagnostic data" to its lowest level. Enterprise and Education \
+send no diagnostic data at all; Home and Pro fall back to the required minimum, which Windows does not allow \
+to switch off on these editions. Replaces the level "Required" that the Components option "Optional \
+diagnostics and personalization" sets."""
+level = "recommended"
+verified = "ADMX DataCollection.admx AllowTelemetry (0 = Diagnostic data off, Enterprise/Education only), ConfigureTelemetryOptInChangeNotification"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "AllowTelemetry", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "DisableTelemetryOptInChangeNotification", dword = 1 },
+]
+
+[[setting]]
+id = "diagtrack-service-off"
+category = "telemetry"
+title = "Turn off the telemetry service (DiagTrack)"
+description = """Disables "Connected User Experiences and Telemetry", the service that collects and uploads \
+diagnostic data, so nothing is sent even where the policy cannot go below the required level."""
+level = "recommended"
+verified = "service DiagTrack present in the 26H2 image (automatic)"
+ops = [{ service = "DiagTrack", start = 4 }]
+
+[[setting]]
+id = "wap-push-service-off"
+category = "telemetry"
+title = "Turn off the WAP push message routing service"
+description = """Disables dmwappushservice, which routes device-management push messages. Only needed when \
+the PC is managed by an MDM such as Intune."""
+level = "recommended"
+verified = "service dmwappushservice present in the 26H2 image"
+ops = [{ service = "dmwappushservice", start = 4 }]
+
+[[setting]]
+id = "diagnostic-data-processing-off"
+category = "telemetry"
+title = "Opt out of cloud processing of diagnostic data"
+description = """Tells Windows that no Microsoft cloud service (Windows Update for Business reports, Update \
+Compliance, Desktop Analytics, the commercial data pipeline) may process this device's diagnostic data, and \
+leaves the device name out of it."""
+level = "recommended"
+verified = "ADMX DataCollection.admx: AllowDesktopAnalyticsProcessing, AllowWUfBCloudProcessing, AllowUpdateComplianceProcessing, AllowCommercialDataPipeline, AllowDeviceNameInDiagnosticData"
+note = "MicrosoftEdgeDataOptIn is not set: no policy in 26H2 (Desktop Analytics retired)."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "AllowDesktopAnalyticsProcessing", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "AllowWUfBCloudProcessing", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "AllowUpdateComplianceProcessing", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "AllowCommercialDataPipeline", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "AllowDeviceNameInTelemetry", dword = 0 },
+]
+
+[[setting]]
+id = "diagnostic-logs-limit"
+category = "telemetry"
+title = "Limit diagnostic log and memory dump collection"
+description = """Keeps Windows from collecting additional diagnostic logs and full memory dumps for \
+diagnostic data, even when the diagnostic level would allow it."""
+level = "recommended"
+sources = ["ADMX DataCollection"]
+verified = "ADMX DataCollection.admx: LimitDiagnosticLogCollection, LimitDumpCollection"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "LimitDiagnosticLogCollection", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "LimitDumpCollection", dword = 1 },
+]
+
+[[setting]]
+id = "onesettings-downloads-off"
+category = "telemetry"
+title = "Do not download configuration from OneSettings"
+description = """Stops Windows from downloading service configuration (OneSettings) from Microsoft. Costs: \
+components that Microsoft tunes remotely keep their built-in defaults."""
+level = "strict"
+verified = "ADMX DataCollection.admx DisableOneSettingsDownloads"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "DisableOneSettingsDownloads", dword = 1 }]
+
+[[setting]]
+id = "device-census-off"
+category = "telemetry"
+title = "Turn off the device census tasks"
+description = """Disables the scheduled tasks that run DeviceCensus.exe to collect device and configuration \
+data for Microsoft."""
+level = "recommended"
+verified = "tasks present in the 26H2 image TaskCache"
+ops = [
+  { task = '\Microsoft\Windows\Device Information\Device' },
+  { task = '\Microsoft\Windows\Device Information\Device User' },
+]
+
+[[setting]]
+id = "license-telemetry-off"
+category = "telemetry"
+title = "Turn off KMS client online validation"
+description = """Stops the Software Protection Platform from sending license validation data (the "AVS" \
+ticket) to Microsoft. Activation itself is unaffected."""
+level = "recommended"
+verified = "ADMX AVSValidationGP.admx NoAcquireGT (NoGenTicket)"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows NT\CurrentVersion\Software Protection Platform', name = "NoGenTicket", dword = 1 }]
+
+# --- customer experience improvement program ---------------------------------------------------------
+
+[[setting]]
+id = "ceip-off"
+category = "ceip"
+title = "Opt out of the Customer Experience Improvement Program"
+description = """Turns off the Windows Customer Experience Improvement Program for all users and disables \
+its data collection tasks (consolidator, kernel, USB and disk check data)."""
+level = "recommended"
+verified = "ADMX ICM.admx CEIPEnable; tasks present in the 26H2 image TaskCache"
+note = "The older BthSQM, Uploader and Server* tasks do not exist in 26H2."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\SQMClient\Windows', name = "CEIPEnable", dword = 0 },
+  { task = '\Microsoft\Windows\Customer Experience Improvement Program\Consolidator' },
+  { task = '\Microsoft\Windows\Customer Experience Improvement Program\KernelCeipTask' },
+  { task = '\Microsoft\Windows\Customer Experience Improvement Program\UsbCeip' },
+  { task = '\Microsoft\Windows\Autochk\Proxy' },
+]
+
+[[setting]]
+id = "disk-diagnostic-collector-off"
+category = "ceip"
+title = "Turn off disk diagnostic data collection"
+description = """Disables the task that collects disk and system information for Microsoft when the \
+Diagnostic Policy Service reports a disk problem."""
+level = "recommended"
+verified = "task present in the 26H2 image TaskCache"
+ops = [{ task = '\Microsoft\Windows\DiskDiagnostic\Microsoft-Windows-DiskDiagnosticDataCollector' }]
+
+# --- application compatibility -----------------------------------------------------------------------
+
+[[setting]]
+id = "app-telemetry-off"
+category = "app-compat"
+title = "Turn off application telemetry and inventory"
+description = """Stops Application Impact Telemetry and the Inventory Collector, which record which programs \
+are installed and how they are used, and disables the compatibility appraiser and program data tasks."""
+level = "recommended"
+verified = "ADMX AppCompat.admx AppCompatTurnOffApplicationImpactTelemetry, AppCompatTurnOffProgramInventory; tasks present in the 26H2 image TaskCache"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat', name = "AITEnable", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat', name = "DisableInventory", dword = 1 },
+  { task = '\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser' },
+  { task = '\Microsoft\Windows\Application Experience\ProgramDataUpdater' },
+  { task = '\Microsoft\Windows\Application Experience\AitAgent' },
+]
+
+[[setting]]
+id = "steps-recorder-off"
+category = "app-compat"
+title = "Turn off Steps Recorder"
+description = """Disables Steps Recorder, which captures screenshots, clicks and keystrokes to document a \
+problem."""
+level = "recommended"
+verified = "ADMX AppCompat.admx AppCompatTurnOffUserActionRecord"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat', name = "DisableUAR", dword = 1 }]
+
+[[setting]]
+id = "compat-assistant-off"
+category = "app-compat"
+title = "Turn off the Program Compatibility Assistant"
+description = """Disables the assistant (policy and PcaSvc service) that watches programs for known \
+compatibility problems and offers fixes. Costs: no automatic compatibility hints for old programs."""
+level = "strict"
+verified = "ADMX AppCompat.admx AppCompatTurnOffProgramCompatibilityAssistant_2; service PcaSvc present in the 26H2 image"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat', name = "DisablePCA", dword = 1 },
+  { service = "PcaSvc", start = 4 },
+]
+
+[[setting]]
+id = "compat-tasks-off"
+category = "app-compat"
+title = "Turn off the startup app and app backup data tasks"
+description = """Disables StartupAppTask (checks autostart programs) and MareBackup (gathers Win32 \
+application data with CompatTelRunner). Costs: no warning about many autostart programs."""
+level = "strict"
+verified = "tasks present in the 26H2 image TaskCache"
+note = "The older PcaPatchDbTask does not exist in 26H2."
+ops = [
+  { task = '\Microsoft\Windows\Application Experience\StartupAppTask' },
+  { task = '\Microsoft\Windows\Application Experience\MareBackup' },
+]
+
+[[setting]]
+id = "compat-engine-off"
+category = "app-compat"
+title = "Turn off the application compatibility engine"
+description = """Switches off the compatibility shims entirely. Old programs that rely on a shim can stop \
+working or behave differently, and the "Compatibility" tab loses its effect. Only for systems that run \
+current software."""
+level = "optional"
+verified = "ADMX AppCompat.admx AppCompatTurnOffEngine, AppCompatRemoveProgramCompatPropPage"
+note = "Optional because it breaks programs that depend on compatibility shims."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat', name = "DisableEngine", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppCompat', name = "DisablePropPage", dword = 1 },
+]
+
+# --- error reporting ---------------------------------------------------------------------------------
+
+[[setting]]
+id = "error-reporting-off"
+category = "error-reporting"
+title = "Turn off Windows Error Reporting"
+description = """Stops Windows from sending crash and problem reports to Microsoft. Costs: no online \
+solutions for problems in the Security and Maintenance control panel."""
+level = "recommended"
+verified = "ADMX ErrorReporting.admx WerDisable_2, WerNoSecondLevelData_2, WerNoLogging_2, WerAutoApproveOSDumps_2; task present in the 26H2 image TaskCache"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting', name = "Disabled", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting', name = "DontSendAdditionalData", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting', name = "LoggingDisabled", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting', name = "AutoApproveOSDumps", dword = 0 },
+  { task = '\Microsoft\Windows\Windows Error Reporting\QueueReporting' },
+]
+
+[[setting]]
+id = "error-reporting-service-off"
+category = "error-reporting"
+title = "Turn off the Windows Error Reporting service"
+description = """Disables WerSvc as well. Costs: crash dumps of programs are no longer collected locally \
+either, which makes troubleshooting harder."""
+level = "strict"
+sources = ["own"]
+verified = "service WerSvc present in the 26H2 image"
+ops = [{ service = "WerSvc", start = 4 }]
+
+# --- app permissions -----------------------------------------------------------------------------
+
+[[category]]
+id = "app-permissions"
+title = "App permissions"
+parent = "data-collection"
+description = "Device-wide denials for Store apps, the same switches as Settings > Privacy & security > App permissions."
+
+[[setting]]
+id = "app-access-location"
+category = "app-permissions"
+title = "Deny apps access to location"
+description = "Apps cannot read the device location. Costs: no automatic time zone, local weather or Find my device."
+level = "strict"
+verified = "ADMX AppPrivacy.admx LetAppsAccessLocation; ConsentStore device switch (written by Settings; kept after setup: VM test); VM p8: setup with every privacy switch on (ProtectYourPC 1) sets the device switch to Allow, so it is written again after setup (the policy denies access either way)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessLocation", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location', name = "Value", sz = "Deny", after_setup = true },
+]
+
+[[setting]]
+id = "app-access-account-info"
+category = "app-permissions"
+title = "Deny apps access to account info"
+description = "Apps cannot read your name, picture and other account information."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessAccountInfo; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessAccountInfo", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\userAccountInformation', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-motion"
+category = "app-permissions"
+title = "Deny apps access to motion data"
+description = "Apps cannot read motion and activity history."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessMotion; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessMotion", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\activity', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-trusted-devices"
+category = "app-permissions"
+title = "Deny apps access to trusted devices"
+description = "Apps cannot use trusted devices (hardware connected to the PC that apps may talk to)."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessTrustedDevices"
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessTrustedDevices", dword = 2 },
+]
+
+[[setting]]
+id = "app-access-unpaired-devices"
+category = "app-permissions"
+title = "Deny apps communication with unpaired devices"
+description = "Apps cannot sync with wireless devices that are not explicitly paired."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsSyncWithDevices"
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsSyncWithDevices", dword = 2 },
+]
+
+[[setting]]
+id = "app-access-camera"
+category = "app-permissions"
+title = "Deny apps access to the camera"
+description = "Store apps cannot use the camera. Costs: video calls and camera apps from the Store stop working."
+level = "optional"
+verified = "ADMX AppPrivacy.admx LetAppsAccessCamera; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessCamera", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-microphone"
+category = "app-permissions"
+title = "Deny apps access to the microphone"
+description = "Store apps cannot use the microphone. Costs: voice calls, dictation and Sound Recorder stop working."
+level = "optional"
+verified = "ADMX AppPrivacy.admx LetAppsAccessMicrophone; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessMicrophone", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-diagnostics"
+category = "app-permissions"
+title = "Deny apps access to other apps' diagnostic information"
+description = "Apps cannot read diagnostic information about other running apps."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsGetDiagnosticInfo; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsGetDiagnosticInfo", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\appDiagnostics', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-documents"
+category = "app-permissions"
+title = "Deny apps access to the Documents library"
+description = "Store apps cannot open the Documents library on their own (files you open through a file picker still work)."
+level = "recommended"
+verified = "ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\documentsLibrary', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-pictures"
+category = "app-permissions"
+title = "Deny apps access to the Pictures library"
+description = "Store apps cannot open the Pictures library on their own. Costs: Photos no longer shows the library automatically."
+level = "strict"
+verified = "ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Strict because it hides the library in Photos."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\picturesLibrary', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-videos"
+category = "app-permissions"
+title = "Deny apps access to the Videos library"
+description = "Store apps cannot open the Videos library on their own. Costs: Media Player no longer lists it automatically."
+level = "strict"
+verified = "ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Strict for the same reason as pictures."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\videosLibrary', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-music"
+category = "app-permissions"
+title = "Deny apps access to the Music library"
+description = "Store apps cannot open the Music library on their own. Costs: Media Player no longer lists it automatically."
+level = "strict"
+verified = "ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Strict for the same reason as pictures."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\musicLibrary', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-file-system"
+category = "app-permissions"
+title = "Deny apps broad file system access"
+description = "Store apps declared for broad file system access cannot read your files outside a file picker."
+level = "recommended"
+verified = "ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\broadFileSystemAccess', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-contacts"
+category = "app-permissions"
+title = "Deny apps access to contacts"
+description = "Apps cannot read your contacts."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessContacts; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessContacts", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\contacts', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-notifications"
+category = "app-permissions"
+title = "Deny apps access to notifications"
+description = "Apps cannot read your notifications. Costs: companion apps (smartwatches, Phone Link) cannot mirror them."
+level = "strict"
+verified = "ADMX AppPrivacy.admx LetAppsAccessNotifications; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessNotifications", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\userNotificationListener', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-calendar"
+category = "app-permissions"
+title = "Deny apps access to the calendar"
+description = "Apps cannot read your calendar."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessCalendar; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessCalendar", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\appointments', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-call-history"
+category = "app-permissions"
+title = "Deny apps access to call history"
+description = "Apps cannot read your call history."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessCallHistory; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessCallHistory", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\phoneCallHistory', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-phone-calls"
+category = "app-permissions"
+title = "Deny apps access to phone calls"
+description = "Apps cannot make or read phone calls. Costs: calls through Phone Link stop working."
+level = "strict"
+verified = "ADMX AppPrivacy.admx LetAppsAccessPhone; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessPhone", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\phoneCall', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-messaging"
+category = "app-permissions"
+title = "Deny apps access to messages (SMS, MMS)"
+description = "Apps cannot read or send text messages. Costs: messages through Phone Link stop working."
+level = "strict"
+verified = "ADMX AppPrivacy.admx LetAppsAccessMessaging; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Strict because it breaks Phone Link messages. Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessMessaging", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\chat', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-email"
+category = "app-permissions"
+title = "Deny apps access to email"
+description = "Apps cannot read or send email through the system email store."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessEmail; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessEmail", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\email', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-tasks"
+category = "app-permissions"
+title = "Deny apps access to tasks"
+description = "Apps cannot read your tasks."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessTasks; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessTasks", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\userDataTasks', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-radios"
+category = "app-permissions"
+title = "Deny apps control of radios"
+description = "Apps cannot switch radios such as Bluetooth or Wi-Fi on or off."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessRadios; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessRadios", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\radios', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-bluetooth"
+category = "app-permissions"
+title = "Deny apps access to Bluetooth devices"
+description = "Apps cannot talk to paired or unpaired Bluetooth devices directly. Costs: Store apps for Bluetooth gadgets stop working; system pairing is unaffected."
+level = "strict"
+verified = "ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Strict because it breaks gadget apps."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\bluetooth', name = "Value", sz = "Deny" },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\bluetoothSync', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-voice-activation"
+category = "app-permissions"
+title = "Deny apps voice activation"
+description = "Apps cannot listen for a keyword to activate themselves, also not on the lock screen."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsActivateWithVoice, LetAppsActivateWithVoiceAboveLock"
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsActivateWithVoice", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsActivateWithVoiceAboveLock", dword = 2 },
+]
+
+[[setting]]
+id = "app-access-spatial"
+category = "app-permissions"
+title = "Deny apps access to spatial perception"
+description = "Apps cannot track physical movement and surroundings (mixed reality sensors)."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessBackgroundSpatialPerception; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessBackgroundSpatialPerception", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\spatialPerception', name = "Value", sz = "Deny" },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\backgroundSpatialPerception', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-eye-tracking"
+category = "app-permissions"
+title = "Deny apps access to eye tracking"
+description = "Apps cannot use eye tracker input."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessGazeInput; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessGazeInput", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\gazeInput', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-presence"
+category = "app-permissions"
+title = "Deny apps access to presence sensing"
+description = "Apps cannot use presence sensors that detect whether someone is in front of the PC."
+level = "recommended"
+verified = "ADMX AppPrivacy.admx LetAppsAccessHumanPresence; ConsentStore device switch (written by Settings; kept after setup: VM test); VM p8: setup with every privacy switch on (ProtectYourPC 1) sets the device switch to Allow, so it is written again after setup (the policy denies access either way)"
+evidence = ["vm"]
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessHumanPresence", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\humanPresence', name = "Value", sz = "Deny", after_setup = true },
+]
+
+[[setting]]
+id = "app-access-screen-capture"
+category = "app-permissions"
+title = "Deny apps programmatic screen capture"
+description = "Apps cannot capture the screen or windows programmatically, also not without the capture border. Costs: Store screen recorders stop working."
+level = "strict"
+verified = "ADMX AppPrivacy.admx LetAppsAccessGraphicsCaptureProgrammatic, LetAppsAccessGraphicsCaptureWithoutBorder; ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Strict because it breaks screen recorder apps. Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessGraphicsCaptureProgrammatic", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsAccessGraphicsCaptureWithoutBorder", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\graphicsCaptureProgrammatic', name = "Value", sz = "Deny" },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\graphicsCaptureWithoutBorder', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-access-input-devices"
+category = "app-permissions"
+title = "Deny apps access to input devices (HID)"
+description = "Store apps cannot talk to custom human interface devices directly. Costs: apps for special keyboards, game pads or controllers may stop working."
+level = "strict"
+verified = "ConsentStore device switch (written by Settings; kept after setup: VM test)"
+evidence = ["vm"]
+note = "Strict because it breaks device companion apps."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\humanInterfaceDevice', name = "Value", sz = "Deny" },
+]
+
+[[setting]]
+id = "app-background-off"
+category = "app-permissions"
+title = "Do not let apps run in the background"
+description = "Store apps run only while they are open. Costs: no live tiles, notifications or sync from closed apps, Search and Widgets react slower."
+level = "optional"
+verified = "ADMX AppPrivacy.admx LetAppsRunInBackground"
+note = "Only the policy value; the three app lists of the ADMX element stay empty."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy', name = "LetAppsRunInBackground", dword = 2 },
+]
+
+# --- search ------------------------------------------------------------------------------------------
+
+[[category]]
+id = "search"
+title = "Search"
+parent = "data-collection"
+
+[[setting]]
+id = "search-web-off"
+category = "search"
+title = "No web results and suggestions in Windows Search"
+description = """Search in the taskbar and Start only searches the PC: no Bing results, no web suggestions in \
+the search box, also not on metered connections."""
+level = "recommended"
+verified = "ADMX Search.admx DisableWebSearch, DoNotUseWebResults, DoNotUseWebResultsOnMeteredConnections; ADMX WindowsExplorer.admx DisableSearchBoxSuggestions (user)"
+note = "DisableSearchBoxSuggestions is a per-user policy. BingSearchEnabled (no policy) is not set; the policies cover it."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "DisableWebSearch", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "ConnectedSearchUseWeb", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "ConnectedSearchUseWebOverMeteredConnections", dword = 0 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Windows\Explorer', name = "DisableSearchBoxSuggestions", dword = 1 },
+]
+
+[[setting]]
+id = "search-cloud-content-off"
+category = "search"
+title = "No cloud content in Windows Search"
+description = """Windows Search does not search OneDrive, SharePoint, Outlook and other cloud content of your \
+Microsoft or work account."""
+level = "recommended"
+verified = "ADMX Search.admx AllowCloudSearch"
+note = "The per-user IsMSACloudSearchEnabled/IsAADCloudSearchEnabled switches are redundant with the policy; dropped."
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "AllowCloudSearch", dword = 0 }]
+
+[[setting]]
+id = "search-highlights-off"
+category = "search"
+title = "No search highlights"
+description = "Search shows no daily highlights and trending content from Microsoft."
+level = "recommended"
+verified = "ADMX Search.admx EnableDynamicContentInWSB"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "EnableDynamicContentInWSB", dword = 0 }]
+
+[[setting]]
+id = "search-location-off"
+category = "search"
+title = "Search does not use the location"
+description = "Windows Search does not use the device location to personalize results."
+level = "recommended"
+verified = "ADMX Search.admx AllowSearchToUseLocation"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "AllowSearchToUseLocation", dword = 0 }]
+
+[[setting]]
+id = "search-anonymous"
+category = "search"
+title = "Share only anonymous information with Search"
+description = """If a search reaches Microsoft at all, it carries neither the user account nor the device \
+identity."""
+level = "recommended"
+verified = "ADMX Search.admx SearchPrivacy (ConnectedSearchPrivacy 3 = anonymous info)"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "ConnectedSearchPrivacy", dword = 3 }]
+
+[[setting]]
+id = "search-index-hardening"
+category = "search"
+title = "Keep the search index local and plain"
+description = """The index does not include encrypted files, cannot be queried over the network and does not \
+run automatic language detection on content."""
+level = "recommended"
+verified = "ADMX Search.admx AllowIndexingEncryptedStoresOrItems, PreventRemoteQueries, AlwaysUseAutoLangDetection"
+note = "PreventUnwantedAddIns is not set: no matching policy value in 26H2."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "AllowIndexingEncryptedStoresOrItems", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "PreventRemoteQueries", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "AlwaysUseAutoLangDetection", dword = 0 },
+]
+
+[[setting]]
+id = "search-history-off"
+category = "search"
+title = "No local search history"
+description = "Search does not remember what you searched for. Costs: no recent searches in the search box."
+level = "strict"
+verified = "ADMX Search.admx DisableSearchHistory (user)"
+note = "The policy is per user (HKCU)."
+ops = [{ reg = 'HKCU\Software\Policies\Microsoft\Windows\Explorer', name = "DisableSearchHistory", dword = 1 }]
+
+[[setting]]
+id = "cortana-off"
+category = "search"
+title = "Turn off Cortana"
+description = """Cortana is no longer part of Windows 11 26H2. The policies keep it off should it be \
+installed again from the Store."""
+level = "recommended"
+verified = "ADMX Search.admx AllowCortana, AllowCortanaAboveLock"
+note = "Cortana's per-user switches, voice and setup settings are not set: no Cortana package in the 26H2 image."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "AllowCortana", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search', name = "AllowCortanaAboveLock", dword = 0 },
+]
+
+# --- advertising -------------------------------------------------------------------------------------
+
+[[category]]
+id = "advertising"
+title = "Advertising and suggestions"
+parent = "data-collection"
+
+[[setting]]
+id = "advertising-id-off"
+category = "advertising"
+title = "Turn off the advertising ID"
+description = "Apps cannot use the advertising ID to show personalized ads across apps."
+level = "recommended"
+verified = "ADMX UserProfiles.admx DisableAdvertisingId (DisabledByGroupPolicy)"
+note = "The per-user AdvertisingInfo!Enabled switch is set by the Components option privacy; the policy covers it."
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo', name = "DisabledByGroupPolicy", dword = 1 }]
+
+[[setting]]
+id = "windows-tips-off"
+category = "advertising"
+title = "No Windows tips"
+description = "Windows shows no tips and tricks about features you have not used yet."
+level = "recommended"
+verified = "ADMX CloudContent.admx DisableSoftLanding"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent', name = "DisableSoftLanding", dword = 1 }]
+
+[[setting]]
+id = "consumer-features-off"
+category = "advertising"
+title = "No Microsoft consumer experiences"
+description = "Windows installs no suggested apps and shows no promotions from Microsoft's consumer service."
+level = "recommended"
+verified = "ADMX CloudContent.admx DisableWindowsConsumerFeatures"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent', name = "DisableWindowsConsumerFeatures", dword = 1 }]
+
+[[setting]]
+id = "spotlight-off"
+category = "advertising"
+title = "Turn off Windows Spotlight"
+description = """No Spotlight pictures, facts and suggestions on the lock screen and desktop. Costs: the lock \
+screen shows a fixed picture."""
+level = "strict"
+verified = "ADMX CloudContent.admx DisableWindowsSpotlightFeatures (user)"
+note = "The policy is per user (HKCU)."
+ops = [{ reg = 'HKCU\Software\Policies\Microsoft\Windows\CloudContent', name = "DisableWindowsSpotlightFeatures", dword = 1 }]
+
+[[setting]]
+id = "settings-suggestions-off"
+category = "advertising"
+title = "No suggested content in Settings"
+description = "The Settings app shows no suggested content and offers (the switch under Privacy > General)."
+level = "recommended"
+verified = "Settings switch (ContentDeliveryManager, key present in the default profile of the 26H2 image); VM p6: kept after setup for every account"
+evidence = ["vm"]
+ops = [
+  { reg = 'HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager', name = "SubscribedContent-338393Enabled", dword = 0 },
+  { reg = 'HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager', name = "SubscribedContent-353694Enabled", dword = 0 },
+  { reg = 'HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager', name = "SubscribedContent-353696Enabled", dword = 0 },
+]
+
+# --- location ----------------------------------------------------------------------------------------
+
+[[category]]
+id = "location"
+title = "Location"
+parent = "data-collection"
+
+[[setting]]
+id = "location-off"
+category = "location"
+title = "Turn off location services"
+description = """Switches off the location platform and the Windows location provider for the whole device. \
+Costs: no automatic time zone, local weather, maps position or Find my device."""
+level = "strict"
+verified = "ADMX Sensors.admx DisableLocation_2, LocationProviderAdm.admx DisableWindowsLocationProvider_1; service lfsvc present in the 26H2 image"
+note = "Sensor\\Overrides values (no policy) are not set; the policy covers them."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors', name = "DisableLocation", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors', name = "DisableWindowsLocationProvider", dword = 1 },
+  { service = "lfsvc", start = 4 },
+]
+
+[[setting]]
+id = "find-my-device-off"
+category = "location"
+title = "Turn off Find my device"
+description = """Windows does not report the device's location to the Microsoft account for Find my device, \
+and the switch cannot be turned on. Costs: a lost device cannot be located online."""
+level = "strict"
+sources = ["Windows privacy settings page during setup (Find my device)"]
+verified = "ADMX FindMy.admx FindMy_AllowFindMyDeviceConfig (AllowFindMyDevice 0)"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\FindMyDevice', name = "AllowFindMyDevice", dword = 0 }]
+
+[[setting]]
+id = "location-scripting-off"
+category = "location"
+title = "No location for scripts"
+description = "Scripts (for example in old web components) cannot query the location."
+level = "recommended"
+verified = "ADMX Sensors.admx DisableLocationScripting_2"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors', name = "DisableLocationScripting", dword = 1 }]
+
+# --- insider and experiments -------------------------------------------------------------------------
+
+[[category]]
+id = "insider"
+title = "Insider program"
+parent = "data-collection"
+
+[[setting]]
+id = "insider-off"
+category = "insider"
+title = "Turn off the Insider program"
+description = "No preview builds and no Windows Insider service."
+level = "recommended"
+verified = "ADMX AllowBuildPreview.admx AllowBuildPreview; service wisvc present in the 26H2 image"
+note = "EnableExperimentation/EnableConfigFlighting (no policy in 26H2) and the PolicyManager default value dropped."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\PreviewBuilds', name = "AllowBuildPreview", dword = 0 },
+  { service = "wisvc", start = 4 },
+]
+
+# --- sync ----------------------------------------------------------------------------------------------
+
+[[category]]
+id = "sync"
+title = "Settings sync"
+parent = "data-collection"
+
+[[setting]]
+id = "settings-sync-off"
+category = "sync"
+title = "Do not sync settings with the Microsoft account"
+description = """Windows does not sync settings, themes, passwords, language, Start layout and app settings \
+through the Microsoft account, and users cannot turn it back on. Costs: settings do not follow you to other PCs."""
+level = "strict"
+verified = "ADMX SettingSync.admx (all Disable*SettingSync policies with user override off)"
+note = "SyncPolicy and the per-user SettingSync\\Groups values (no policy) dropped."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableSettingSync", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableSettingSyncUserOverride", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableSyncOnPaidNetwork", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableApplicationSettingSync", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableApplicationSettingSyncUserOverride", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableAppSyncSettingSync", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableAppSyncSettingSyncUserOverride", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableCredentialsSettingSync", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableCredentialsSettingSyncUserOverride", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableDesktopThemeSettingSync", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableDesktopThemeSettingSyncUserOverride", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisablePersonalizationSettingSync", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisablePersonalizationSettingSyncUserOverride", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableStartLayoutSettingSync", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableStartLayoutSettingSyncUserOverride", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableWebBrowserSettingSync", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableWebBrowserSettingSyncUserOverride", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableWindowsSettingSync", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\SettingSync', name = "DisableWindowsSettingSyncUserOverride", dword = 1 },
+]
+
+# --- network checks and peer downloads ---------------------------------------------------------------
+
+[[category]]
+id = "network-checks"
+title = "Connectivity checks and peer downloads"
+parent = "data-collection"
+
+[[setting]]
+id = "delivery-optimization-http-only"
+category = "network-checks"
+title = "No peer-to-peer downloads for updates and apps"
+description = """Windows Update and the Store download only from Microsoft, never from or to other PCs on the \
+network or the internet."""
+level = "recommended"
+verified = "ADMX DeliveryOptimization.admx DownloadMode (0 = HTTP only)"
+note = "Non-policy copies (Config, NetworkService profile, per-user switch) are not set; the NetworkService profile does not exist offline anyway."
+conflicts = ["delivery-optimization-lan-only"]
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization', name = "DODownloadMode", dword = 0 }]
+
+[[setting]]
+id = "connectivity-probe-off"
+category = "network-checks"
+title = "No connectivity checks with Microsoft servers"
+description = """Windows no longer contacts msftconnecttest.com to test for internet access, neither actively \
+nor passively, and the check hosts are blocked. Costs: the network icon may show "No internet" although there \
+is a connection, and captive portal sign-in pages (hotels, trains) do not open on their own."""
+level = "optional"
+verified = "ADMX ICM.admx NoActiveProbe, NCSI.admx NCSI_PassivePolling; hosts entries"
+note = "NlaSvc and netprofm stay on: without them Windows cannot identify networks and the firewall treats every network as public."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\NetworkConnectivityStatusIndicator', name = "NoActiveProbe", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\NetworkConnectivityStatusIndicator', name = "DisablePassivePolling", dword = 1 },
+  { hosts = ["msftncsi.com", "dns.msftncsi.com", "ipv6.msftncsi.com", "msftconnecttest.com", "www.msftconnecttest.com", "ipv6.msftconnecttest.com"] },
+]
+
+# --- biometrics ----------------------------------------------------------------------------------------
+
+[[category]]
+id = "biometrics"
+title = "Biometrics"
+parent = "data-collection"
+
+[[setting]]
+id = "biometrics-off"
+category = "biometrics"
+title = "Turn off biometrics"
+description = """Disables fingerprint and face recognition, biometric sign-in and the Windows Biometric \
+Service. Costs: no Windows Hello face or fingerprint sign-in."""
+level = "strict"
+verified = "ADMX Biometrics.admx Biometrics_EnableBio, Biometrics_EnableCredProv; service WbioSrvc present in the 26H2 image"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Biometrics', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Biometrics\Credential Provider', name = "Enabled", dword = 0 },
+  { service = "WbioSrvc", start = 4 },
+]
+
+# --- AI features ---------------------------------------------------------------------------------------
+
+[[category]]
+id = "ai"
+title = "AI features (Recall, Click to Do)"
+parent = "data-collection"
+
+[[setting]]
+id = "recall-off"
+category = "ai"
+title = "Turn off Recall"
+description = """Recall can neither be enabled nor save snapshots of the screen, for the machine and every \
+user."""
+level = "recommended"
+verified = "ADMX WindowsCopilot.admx AllowRecallEnablement, DisableAIDataAnalysis (both classes)"
+note = "DisableAIDataAnalysis lives below WindowsAI, not WindowsCopilot."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI', name = "AllowRecallEnablement", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI', name = "DisableAIDataAnalysis", dword = 1 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Windows\WindowsAI', name = "DisableAIDataAnalysis", dword = 1 },
+]
+
+[[setting]]
+id = "click-to-do-off"
+category = "ai"
+title = "Turn off Click to Do"
+description = "Click to Do, which analyzes what is on the screen to offer actions, is switched off."
+level = "recommended"
+sources = ["ADMX WindowsCopilot"]
+verified = "ADMX WindowsCopilot.admx DisableClickToDo (both classes)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI', name = "DisableClickToDo", dword = 1 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Windows\WindowsAI', name = "DisableClickToDo", dword = 1 },
+]
+
+[[setting]]
+id = "settings-agent-off"
+category = "ai"
+title = "No AI agent in the Settings search"
+description = "The search in Settings works without the AI agent that interprets requests and changes settings."
+level = "recommended"
+sources = ["ADMX WindowsCopilot"]
+verified = "ADMX WindowsCopilot.admx DisableSettingsAgent"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI', name = "DisableSettingsAgent", dword = 1 }]
+
+# --- activity, input, speech, feedback -------------------------------------------------------------------
+
+[[category]]
+id = "activity"
+title = "Activity, input and speech"
+parent = "data-collection"
+
+[[setting]]
+id = "activity-history-off"
+category = "activity"
+title = "No activity history"
+description = """Windows neither records nor uploads the activity history (opened files, apps and websites) \
+and shows no activity feed."""
+level = "recommended"
+verified = "ADMX OSPolicy.admx EnableActivityFeed, PublishUserActivities, UploadUserActivities"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\System', name = "EnableActivityFeed", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\System', name = "PublishUserActivities", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\System', name = "UploadUserActivities", dword = 0 },
+]
+
+[[setting]]
+id = "inking-typing-personalization-off"
+category = "activity"
+title = "No learning from inking and typing"
+description = """Windows does not collect handwriting and typing to build a personal dictionary, does not \
+share handwriting samples or error reports, and does not send typing data to improve recognition."""
+level = "recommended"
+verified = "ADMX Globalization.admx ImplicitDataCollectionOff_2; ICM.admx (PreventHandwritingErrorReports, PreventHandwritingDataSharing); TIPC = Settings switch (key present in the 26H2 default profile), VM: kept after setup"
+evidence = ["vm"]
+note = "HarvestContacts and the HKLM copy of TIPC (no policy) dropped; the Components option privacy sets the per-user values too."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\InputPersonalization', name = "RestrictImplicitInkCollection", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\InputPersonalization', name = "RestrictImplicitTextCollection", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\HandwritingErrorReports', name = "PreventHandwritingErrorReports", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\TabletPC', name = "PreventHandwritingDataSharing", dword = 1 },
+  { reg = 'HKCU\Software\Microsoft\Input\TIPC', name = "Enabled", dword = 0 },
+]
+
+[[setting]]
+id = "online-speech-off"
+category = "activity"
+title = "No online speech recognition"
+description = """Users cannot turn on Microsoft's cloud speech recognition; dictation and voice access use only \
+the on-device engine. Costs: dictation in languages without an offline model does not work."""
+level = "recommended"
+verified = "ADMX Globalization.admx AllowInputPersonalization; OnlineSpeechPrivacy = Settings switch, VM: kept after setup"
+evidence = ["vm"]
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\InputPersonalization', name = "AllowInputPersonalization", dword = 0 },
+  { reg = 'HKCU\Software\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy', name = "HasAccepted", dword = 0 },
+]
+
+[[setting]]
+id = "feedback-off"
+category = "activity"
+title = "Windows never asks for feedback"
+description = "No feedback requests and notifications (feedback frequency \"Never\")."
+level = "recommended"
+verified = "ADMX FeedbackNotifications.admx DoNotShowFeedbackNotifications; Siuf\\Rules = Settings switch, VM: kept after setup; Feedback tasks present in the 26H2 image TaskCache"
+evidence = ["vm"]
+note = "The copy below CurrentVersion\\Policies (no ADMX) dropped."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection', name = "DoNotShowFeedbackNotifications", dword = 1 },
+  { reg = 'HKCU\Software\Microsoft\Siuf\Rules', name = "NumberOfSIUFInPeriod", dword = 0 },
+  { reg = 'HKCU\Software\Microsoft\Siuf\Rules', name = "PeriodInNanoSeconds", delete = true },
+  { task = '\Microsoft\Windows\Feedback\Siuf\DmClient' },
+  { task = '\Microsoft\Windows\Feedback\Siuf\DmClientOnScenarioDownload' },
+]
+
+[[setting]]
+id = "language-list-private"
+category = "activity"
+title = "Websites cannot read the language list"
+description = "Websites do not get your language list to show local content (Settings > Privacy > General)."
+level = "recommended"
+verified = "Settings switch (HKCU Control Panel\\International\\User Profile); VM p3: setup recreates the key from the language settings, so the value is written again after setup"
+evidence = ["vm"]
+ops = [{ reg = 'HKCU\Control Panel\International\User Profile', name = "HttpAcceptLanguageOptOut", dword = 1, after_setup = true }]
+
+[[setting]]
+id = "app-launch-tracking-off"
+category = "activity"
+title = "Do not track app launches"
+description = "Windows does not record which apps you start. Costs: no \"Most used\" list in Start and search."
+level = "strict"
+verified = "Settings switch (Explorer\\Advanced, key present in the 26H2 default profile); VM: kept after setup"
+evidence = ["vm"]
+ops = [{ reg = 'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced', name = "Start_TrackProgs", dword = 0 }]
+
+[[setting]]
+id = "sensors-off"
+category = "activity"
+title = "Turn off sensors"
+description = """Switches off the sensor platform for the whole device. Costs: no automatic screen rotation \
+and no adaptive brightness on laptops and tablets."""
+level = "strict"
+verified = "ADMX Sensors.admx DisableSensors_2"
+note = "Strict because it breaks rotation and automatic brightness."
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\LocationAndSensors', name = "DisableSensors", dword = 1 }]
+
+[[setting]]
+id = "maps-auto-update-off"
+category = "activity"
+title = "No automatic map downloads"
+description = "Offline maps are not downloaded or updated automatically, the Downloaded Maps Manager service is off and the Maps settings page makes no network requests on its own."
+level = "recommended"
+verified = "ADMX WinMaps.admx TurnOffAutoUpdate, DisallowUntriggeredNetworkOnSettingsPage; service MapsBroker present in the 26H2 image"
+ops = [
+  { service = "MapsBroker", start = 4 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Maps', name = "AutoDownloadAndUpdateMapData", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Maps', name = "AllowUntriggeredNetworkTrafficOnSettingsPage", dword = 0 },
+]
+
+[[setting]]
+id = "game-dvr-off"
+category = "activity"
+title = "Turn off game recording (Game DVR)"
+description = "Game Bar cannot record or broadcast games. Costs: no game clips and screenshots through Game Bar."
+level = "strict"
+verified = "ADMX GameDVR.admx AllowGameDVR"
+note = "Strict because it removes a feature. The per-user GameConfigStore switch is covered by the policy."
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR', name = "AllowGameDVR", dword = 0 }]
+
+[[setting]]
+id = "wmdrm-online-off"
+category = "activity"
+title = "No internet access for Windows Media DRM"
+description = "The old Windows Media DRM does not go online to acquire licenses or updates for protected media files."
+level = "recommended"
+verified = "ADMX WindowsMediaDRM.admx DisableOnline"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\WMDRM', name = "DisableOnline", dword = 1 }]
+
+# --- Defender and SmartScreen ------------------------------------------------------------------------
+# Switching Defender off is the Components option disable-defender; these settings are for systems that
+# keep Defender and are hidden when it is off. Removing security features without a privacy benefit
+# (firewall, exploit protection, System Guard, ...) is not part of this catalog.
+
+[[category]]
+id = "security-services"
+title = "Defender and SmartScreen data sharing"
+
+[[setting]]
+id = "defender-samples-never"
+category = "security-services"
+title = "Defender never sends file samples"
+description = """Defender keeps its cloud protection but never uploads suspicious files to Microsoft for \
+analysis."""
+level = "recommended"
+hidden_if = ["defender-off"]
+verified = "ADMX WindowsDefender.admx SpynetReporting group: SubmitSamplesConsent (2 = never send)"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet', name = "SubmitSamplesConsent", dword = 2 }]
+
+[[setting]]
+id = "defender-cloud-off"
+category = "security-services"
+title = "Defender without cloud protection"
+description = """Defender stops sending file and behavior information to Microsoft's cloud protection service \
+(MAPS), blocks nothing "at first sight" and gets no real-time signature updates from the cloud. Costs: new \
+threats are recognized later, only through regular signature updates."""
+level = "strict"
+hidden_if = ["defender-off"]
+verified = "ADMX WindowsDefender.admx SpynetReporting, SpynetReporting override, SubmitSamplesConsent, DisableBlockAtFirstSeen, RealtimeSignatureDelivery"
+note = "Extended cloud check and cloud block level are not set: without MAPS they have no effect."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet', name = "SpynetReporting", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet', name = "LocalSettingOverrideSpynetReporting", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet', name = "SubmitSamplesConsent", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Spynet', name = "DisableBlockAtFirstSeen", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Signature Updates', name = "RealtimeSignatureDelivery", dword = 0 },
+]
+
+[[setting]]
+id = "defender-telemetry-off"
+category = "security-services"
+title = "No Defender telemetry and remote experiments"
+description = """Defender sends no Watson error reports, the Defender Core service sends no telemetry and \
+takes no configurations or experiments from Microsoft's ECS service."""
+level = "recommended"
+hidden_if = ["defender-off"]
+verified = "ADMX WindowsDefender.admx Reporting_DisableGenericRePorts; DisableCoreService1DSTelemetry and DisableCoreServiceECSIntegration: Microsoft Learn \"Microsoft Defender Core service overview\" (policy values, no ADMX in 26H2)"
+evidence = ["doc", "vm"]
+note = "The CoreService copies outside Policies dropped."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Reporting', name = "DisableGenericRePorts", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Features', name = "DisableCoreService1DSTelemetry", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows Defender\Features', name = "DisableCoreServiceECSIntegration", dword = 1 },
+]
+
+[[setting]]
+id = "mrt-reporting-off"
+category = "security-services"
+title = "Malicious Software Removal Tool sends no reports"
+description = """The monthly Malicious Software Removal Tool from Windows Update still runs but does not \
+report infection information to Microsoft."""
+level = "recommended"
+verified = "Microsoft KB891716 (Policies\\Microsoft\\MRT DontReportInfectionInformation = 1); no ADMX"
+evidence = ["doc", "vm"]
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\MRT', name = "DontReportInfectionInformation", dword = 1 }]
+
+[[setting]]
+id = "smartscreen-apps-off"
+category = "security-services"
+title = "Turn off SmartScreen for apps and files"
+description = """Windows no longer sends file hashes and download sources of programs you start to Microsoft \
+for a reputation check. Costs: no warning before running unknown or known-malicious downloads."""
+level = "optional"
+verified = "ADMX SmartScreen.admx ShellConfigureSmartScreen, WindowsExplorer.admx EnableSmartScreen"
+note = "The Explorer!SmartScreenEnabled copies (no policy) and the removal of SmartScreen COM classes dropped; the policy is enough and keeps the system serviceable."
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\System', name = "EnableSmartScreen", dword = 0 }]
+
+[[setting]]
+id = "smartscreen-edge-off"
+category = "security-services"
+title = "Turn off SmartScreen in Edge"
+description = """Edge no longer checks visited sites and downloads against Microsoft's SmartScreen service. \
+Costs: no phishing and malware warnings in Edge."""
+level = "optional"
+hidden_if = ["edge-removed"]
+verified = "ADMX SmartScreen.admx EdgeConfigureSmartScreen"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "SmartScreenEnabled", dword = 0 }]
+
+[[setting]]
+id = "phishing-protection-capture-off"
+category = "security-services"
+title = "Enhanced phishing protection collects no data"
+description = """Enhanced phishing protection does not capture the content of a window where you typed your \
+password on a suspicious site, and shows no password reuse, unsafe app or malicious site notifications."""
+level = "strict"
+verified = "ADMX WebThreatDefense.admx AutomaticDataCollection, NotifyMalicious, NotifyPasswordReuse, NotifyUnsafeApp"
+note = "The WebThreatDefense services stay: removing them weakens security without a privacy benefit once data capture is off."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WTDS\Components', name = "CaptureThreatWindow", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WTDS\Components', name = "NotifyMalicious", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WTDS\Components', name = "NotifyPasswordReuse", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WTDS\Components', name = "NotifyUnsafeApp", dword = 0 },
+]
+
+[[setting]]
+id = "download-zone-info-off"
+category = "security-services"
+title = "Do not mark downloads with their origin"
+description = """Downloaded files no longer carry a hidden note with the site they came from (Mark of the \
+Web). Costs: Office, SmartScreen and Windows no longer warn about files from the internet."""
+level = "optional"
+verified = "ADMX AttachmentManager.admx AM_MarkZoneOnSavedAtttachments (user; 1 = do not preserve)"
+note = "The policy is per user (HKCU)."
+ops = [{ reg = 'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments', name = "SaveZoneInformation", dword = 1 }]
+
+# --- hosts file ----------------------------------------------------------------------------------------
+# Every name was checked to still exist in DNS (October 2026); names that no longer resolve and the
+# live tile hosts (no live tiles in Windows 11) were dropped. The hosts file works for programs that use
+# the system resolver.
+
+[[category]]
+id = "hosts"
+title = "Block tracking hosts (hosts file)"
+
+[[setting]]
+id = "hosts-telemetry"
+category = "hosts"
+title = "Block telemetry hosts"
+description = "Diagnostic data and user experience endpoints of Windows resolve to 0.0.0.0."
+level = "recommended"
+verified = "all names resolve in public DNS (DoH check, 2026-10-25)"
+ops = [{ hosts = [
+  "functional.events.data.microsoft.com", "browser.events.data.msn.com", "self.events.data.microsoft.com",
+  "v10.events.data.microsoft.com", "v10c.events.data.microsoft.com", "us-v10c.events.data.microsoft.com",
+  "eu-v10c.events.data.microsoft.com", "v10.vortex-win.data.microsoft.com", "vortex-win.data.microsoft.com",
+  "telecommand.telemetry.microsoft.com", "www.telecommandsvc.microsoft.com", "umwatson.events.data.microsoft.com",
+  "watsonc.events.data.microsoft.com", "eu-watsonc.events.data.microsoft.com",
+] }]
+
+[[setting]]
+id = "hosts-error-reporting"
+category = "hosts"
+title = "Block error and crash report hosts"
+description = "Windows Error Reporting and online crash analysis endpoints resolve to 0.0.0.0."
+level = "recommended"
+verified = "names resolve in public DNS (DoH check, 2026-10-25)"
+note = "co4.telecommand.telemetry.microsoft.com, modern.watson.data.microsoft.com, cs11.wpc.v0cdn.net and cs1137.wpc.gammacdn.net no longer resolve; dropped."
+ops = [{ hosts = [
+  "watson.telemetry.microsoft.com", "umwatsonc.events.data.microsoft.com", "ceuswatcab01.blob.core.windows.net",
+  "ceuswatcab02.blob.core.windows.net", "eaus2watcab01.blob.core.windows.net", "eaus2watcab02.blob.core.windows.net",
+  "weus2watcab01.blob.core.windows.net", "weus2watcab02.blob.core.windows.net", "oca.telemetry.microsoft.com",
+  "oca.microsoft.com", "kmwatsonc.events.data.microsoft.com",
+] }]
+
+[[setting]]
+id = "hosts-edge-experiments"
+category = "hosts"
+title = "Block Edge experimentation host"
+description = "Edge cannot load experiments and remote configuration from config.edge.skype.com."
+level = "recommended"
+hidden_if = ["edge-removed"]
+verified = "name resolves in public DNS (DoH check, 2026-10-25)"
+ops = [{ hosts = ["config.edge.skype.com"] }]
+
+[[setting]]
+id = "hosts-remote-config"
+category = "hosts"
+title = "Block Windows remote configuration hosts"
+description = """Windows cannot fetch settings and feature configuration from settings-win.data.microsoft.com. \
+Costs: features that Microsoft enables or tunes remotely stay on their built-in defaults."""
+level = "strict"
+verified = "names resolve in public DNS (DoH check, 2026-10-25)"
+ops = [{ hosts = ["settings-win.data.microsoft.com", "settings.data.microsoft.com"] }]
+
+[[setting]]
+id = "hosts-msn-ads"
+category = "hosts"
+title = "Block MSN, Spotlight and suggestion hosts"
+description = """Spotlight pictures, Start and lock screen suggestions and MSN content resolve to 0.0.0.0. \
+Costs: Widgets, the Edge news page, the Weather and News apps and Spotlight show no content."""
+level = "strict"
+verified = "all names resolve in public DNS (DoH check, 2026-10-25)"
+ops = [{ hosts = [
+  "arc.msn.com", "ris.api.iris.microsoft.com", "fd.api.iris.microsoft.com", "api.msn.com", "assets.msn.com",
+  "c.msn.com", "g.msn.com", "ntp.msn.com", "srtb.msn.com", "www.msn.com", "staticview.msn.com",
+  "mucp.api.account.microsoft.com", "query.prod.cms.rt.microsoft.com",
+] }]
+
+[[setting]]
+id = "hosts-maps-location"
+category = "hosts"
+title = "Block map and location service hosts"
+description = """Map data, map updates and Microsoft's location inference service resolve to 0.0.0.0. Costs: \
+maps and Wi-Fi based location do not work."""
+level = "strict"
+verified = "names resolve in public DNS (DoH check, 2026-10-25)"
+note = "maps.windows.com and location-inference-westus.cloudapp.net no longer resolve; dropped."
+ops = [{ hosts = ["ecn.dev.virtualearth.net", "ecn-us.dev.virtualearth.net", "weathermapdata.blob.core.windows.net", "inference.location.live.net"] }]
+
+[[setting]]
+id = "hosts-photos-sync"
+category = "hosts"
+title = "Block Photos app service host"
+description = "The Photos app cannot reach its online service host. Costs: online features of Photos (OneDrive photos, memories) stop working."
+level = "strict"
+verified = "name resolves in public DNS (DoH check, 2026-10-25)"
+ops = [{ hosts = ["evoke-windowsservices-tas.msedge.net"] }]
+
+[[setting]]
+id = "hosts-dropbox-telemetry"
+category = "hosts"
+title = "Block Dropbox telemetry hosts"
+description = "Dropbox, if installed later, cannot send telemetry."
+level = "recommended"
+verified = "names resolve in public DNS (DoH check, 2026-10-25)"
+ops = [{ hosts = ["telemetry.dropbox.com", "telemetry.v.dropbox.com"] }]
+
+# --- Explorer and lock screen ----------------------------------------------------------------------------
+
+[[category]]
+id = "explorer"
+title = "Explorer, Settings and lock screen"
+
+[[setting]]
+id = "online-tips-off"
+category = "explorer"
+title = "No online tips in Settings"
+description = "Settings does not download tips and help content from Microsoft."
+level = "recommended"
+verified = "ADMX ControlPanel.admx AllowOnlineTips"
+note = "AllowOnlineTips lives below CurrentVersion\\Policies\\Explorer."
+ops = [{ reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', name = "AllowOnlineTips", dword = 0 }]
+
+[[setting]]
+id = "explorer-web-services-off"
+category = "explorer"
+title = "No web services in Explorer"
+description = """Explorer does not look up unknown file types online, offers no "Order prints" and "Publish to \
+the web" tasks, downloads no provider lists for its wizards and does not suggest the Store for unknown files."""
+level = "recommended"
+verified = "ADMX ICM.admx ShellNoUseInternetOpenWith_2, ShellRemoveOrderPrints_2, ShellRemovePublishToWeb_2, ShellPreventWPWDownload_2, ShellNoUseStoreOpenWith_2"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', name = "NoInternetOpenWith", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', name = "NoOnlinePrintsWizard", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', name = "NoPublishingWizard", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', name = "NoWebServices", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Explorer', name = "NoUseStoreOpenWith", dword = 1 },
+]
+
+[[setting]]
+id = "lock-screen-notifications-off"
+category = "explorer"
+title = "No app notifications on the lock screen"
+description = "Notifications, which can contain message text, are not shown on the lock screen."
+level = "recommended"
+verified = "ADMX Logon.admx DisableLockScreenAppNotifications"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\System', name = "DisableLockScreenAppNotifications", dword = 1 }]
+
+[[setting]]
+id = "recent-documents-off"
+category = "explorer"
+title = "No list of recently opened files"
+description = """Windows keeps no history of recently opened documents (Recent, jump lists, Start). Costs: no \
+recent files in Start, Explorer Home and jump lists."""
+level = "strict"
+verified = "ADMX StartMenu.admx NoRecentDocsHistory"
+note = "Clearing the history on exit is not needed when no history is kept."
+ops = [{ reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', name = "NoRecentDocsHistory", dword = 1 }]
+
+# --- security hardening -------------------------------------------------------------------------------
+
+[[category]]
+id = "hardening"
+title = "Security hardening"
+description = "Documented hardening: legacy protocols, weak ciphers, anonymous access, clipboard and autoplay."
+
+[[setting]]
+id = "tls-ssl-off"
+category = "hardening"
+title = "Turn off SSL 2.0 and 3.0"
+description = """Windows never uses the broken SSL 2.0 and 3.0 protocols, neither as client nor as server."""
+level = "recommended"
+verified = "Microsoft Learn \"TLS, DTLS, and SSL protocol version settings\" (SCHANNEL Protocols, documented registry values; no ADMX)"
+evidence = ["doc", "vm"]
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 2.0\Server', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 2.0\Server', name = "DisabledByDefault", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 2.0\Client', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 2.0\Client', name = "DisabledByDefault", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 3.0\Server', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 3.0\Server', name = "DisabledByDefault", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 3.0\Client', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\SSL 3.0\Client', name = "DisabledByDefault", dword = 1 },
+]
+
+[[setting]]
+id = "tls-legacy-off"
+category = "hardening"
+title = "Turn off TLS 1.0, TLS 1.1 and DTLS 1.0"
+description = """Only TLS 1.2 and newer are used. Costs: very old devices, printers, NAS and servers that only speak TLS 1.0/1.1 cannot be reached."""
+level = "strict"
+verified = "Microsoft Learn \"TLS, DTLS, and SSL protocol version settings\" (SCHANNEL Protocols, documented registry values; no ADMX)"
+evidence = ["doc", "vm"]
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server', name = "DisabledByDefault", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Client', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Client', name = "DisabledByDefault", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server', name = "DisabledByDefault", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Client', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Client', name = "DisabledByDefault", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\DTLS 1.0\Server', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\DTLS 1.0\Server', name = "DisabledByDefault", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\DTLS 1.0\Client', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\DTLS 1.0\Client', name = "DisabledByDefault", dword = 1 },
+]
+
+[[setting]]
+id = "tls-modern-on"
+category = "hardening"
+title = "Make sure TLS 1.3 and DTLS 1.2 are on"
+description = """Turns TLS 1.3 and DTLS 1.2 on explicitly for client and server."""
+level = "recommended"
+verified = "Microsoft Learn \"TLS, DTLS, and SSL protocol version settings\" (SCHANNEL Protocols, documented registry values; no ADMX)"
+evidence = ["doc", "vm"]
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.3\Server', name = "Enabled", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.3\Server', name = "DisabledByDefault", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.3\Client', name = "Enabled", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.3\Client', name = "DisabledByDefault", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\DTLS 1.2\Server', name = "Enabled", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\DTLS 1.2\Server', name = "DisabledByDefault", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\DTLS 1.2\Client', name = "Enabled", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\DTLS 1.2\Client', name = "DisabledByDefault", dword = 0 },
+]
+
+[[setting]]
+id = "ciphers-weak-off"
+category = "hardening"
+title = "Turn off weak ciphers"
+description = """RC2, RC4, DES and NULL ciphers are never used for TLS."""
+level = "recommended"
+verified = "Microsoft KB245030 (SCHANNEL Ciphers/Hashes, documented registry values; no ADMX)"
+evidence = ["doc", "vm"]
+note = "Recommended: RC2/RC4/DES are off for TLS on current Windows anyway, so nothing is lost."
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC2 40/128', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC2 56/128', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC2 128/128', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC4 128/128', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC4 64/128', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC4 56/128', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\RC4 40/128', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\DES 56/56', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\NULL', name = "Enabled", dword = 0 },
+]
+
+[[setting]]
+id = "ciphers-3des-off"
+category = "hardening"
+title = "Turn off Triple DES"
+description = """Triple DES is never used for TLS. Costs: very old servers that only offer 3DES cannot be reached."""
+level = "strict"
+verified = "Microsoft KB245030 (SCHANNEL Ciphers/Hashes, documented registry values; no ADMX)"
+evidence = ["doc", "vm"]
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\Triple DES 168', name = "Enabled", dword = 0 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\Triple DES 168/168', name = "Enabled", dword = 0 },
+]
+
+[[setting]]
+id = "tls-key-length-strong"
+category = "hardening"
+title = "Require 2048-bit Diffie-Hellman keys"
+description = """TLS connections with Diffie-Hellman keys shorter than 2048 bits are refused."""
+level = "recommended"
+verified = "Microsoft Learn \"TLS, DTLS, and SSL registry settings\" (SCHANNEL Protocols, documented registry values; no ADMX)"
+evidence = ["doc", "vm"]
+note = "An RSA 2048 requirement (breaks Hyper-V VM connections), MD5/SHA-1 hash removal (breaks TLS 1.2 suites still in use) and renegotiation changes are left out."
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\KeyExchangeAlgorithms\Diffie-Hellman', name = "ServerMinKeyBitLength", dword = 2048 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\KeyExchangeAlgorithms\Diffie-Hellman', name = "ClientMinKeyBitLength", dword = 2048 },
+]
+
+[[setting]]
+id = "dotnet-strong-crypto"
+category = "hardening"
+title = "Strong TLS for .NET Framework programs"
+description = """Programs built for .NET Framework 2.0 to 4.x use the system's TLS versions and strong cryptography instead of their old defaults."""
+level = "recommended"
+verified = "Microsoft Learn \"Transport Layer Security best practices with .NET Framework\" (SchUseStrongCrypto, SystemDefaultTlsVersions)"
+evidence = ["doc", "vm"]
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\.NETFramework\v2.0.50727', name = "SchUseStrongCrypto", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\WOW6432Node\Microsoft\.NETFramework\v2.0.50727', name = "SchUseStrongCrypto", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\.NETFramework\v4.0.30319', name = "SchUseStrongCrypto", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\WOW6432Node\Microsoft\.NETFramework\v4.0.30319', name = "SchUseStrongCrypto", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\.NETFramework\v2.0.50727', name = "SystemDefaultTlsVersions", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\WOW6432Node\Microsoft\.NETFramework\v2.0.50727', name = "SystemDefaultTlsVersions", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\.NETFramework\v4.0.30319', name = "SystemDefaultTlsVersions", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\WOW6432Node\Microsoft\.NETFramework\v4.0.30319', name = "SystemDefaultTlsVersions", dword = 1 },
+]
+
+[[setting]]
+id = "ntlmv2-only"
+category = "hardening"
+title = "Only NTLMv2 authentication"
+description = """Windows sends only NTLMv2 responses and refuses LM and NTLM. Costs: very old NAS and Samba servers that need NTLMv1 stop working."""
+level = "strict"
+verified = "Microsoft Learn security policy \"Network security: LAN Manager authentication level\" (Lsa!LmCompatibilityLevel 5)"
+evidence = ["doc", "vm"]
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\Lsa', name = "LmCompatibilityLevel", dword = 5 },
+]
+
+[[setting]]
+id = "anonymous-access-off"
+category = "hardening"
+title = "No anonymous access to accounts and shares"
+description = """Anonymous network users cannot list accounts and shares or open named pipes and shares."""
+level = "recommended"
+verified = "Microsoft Learn security policies \"Network access: Do not allow anonymous enumeration ...\" and \"Restrict anonymous access to Named Pipes and Shares\"; VM p3: setup's security template (INF/defltwk.inf RestrictAnonymous=0) resets the value, so it is written again after setup"
+evidence = ["doc", "vm"]
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\Lsa', name = "RestrictAnonymousSAM", dword = 1 },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\Lsa', name = "RestrictAnonymous", dword = 1, after_setup = true },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters', name = "RestrictNullSessAccess", dword = 1 },
+]
+
+[[setting]]
+id = "admin-shares-off"
+category = "hardening"
+title = "No hidden administrative shares"
+description = """Windows does not create the hidden C$ and ADMIN$ shares. Costs: remote administration tools that rely on them stop working."""
+level = "strict"
+verified = "Microsoft Learn (LanmanServer\\Parameters!AutoShareWks 0)"
+evidence = ["doc", "vm"]
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters', name = "AutoShareWks", dword = 0 },
+]
+
+[[setting]]
+id = "remote-assistance-off"
+category = "hardening"
+title = "Turn off Remote Assistance"
+description = """Nobody can be invited to view or control this PC through Remote Assistance. Quick Assist is a separate app (Components)."""
+level = "recommended"
+verified = "ADMX RemoteAssistance.admx RA_Solicit (fAllowToGetHelp)"
+note = "The policy replaces the non-policy Control\\Remote Assistance values."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services', name = "fAllowToGetHelp", dword = 0 },
+]
+
+[[setting]]
+id = "winrm-basic-auth-off"
+category = "hardening"
+title = "No basic authentication for WinRM"
+description = """The WinRM client never sends credentials with unencrypted basic authentication."""
+level = "recommended"
+verified = "ADMX WindowsRemoteManagement.admx AllowBasic_2"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WinRM\Client', name = "AllowBasic", dword = 0 },
+]
+
+[[setting]]
+id = "clipboard-cloud-off"
+category = "hardening"
+title = "No clipboard sync across devices"
+description = """The clipboard is never uploaded to sync it with other devices. Costs: no shared clipboard with your other PCs and phone."""
+level = "strict"
+verified = "ADMX OSPolicy.admx AllowCrossDeviceClipboard"
+note = "The per-user switch is covered by the policy. Disabling the clipboard user service (cbdhsvc) is left out, it breaks copy and paste history entirely."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\System', name = "AllowCrossDeviceClipboard", dword = 0 },
+]
+
+[[setting]]
+id = "clipboard-history-off"
+category = "hardening"
+title = "No clipboard history"
+description = """Windows keeps no history of copied items (Win+V). Costs: Win+V shows only the current item."""
+level = "strict"
+verified = "ADMX OSPolicy.admx AllowClipboardHistory"
+note = "Strict because it removes a feature."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\System', name = "AllowClipboardHistory", dword = 0 },
+]
+
+[[setting]]
+id = "autoplay-off"
+category = "hardening"
+title = "Turn off AutoPlay and AutoRun"
+description = """Inserted media and connected devices start nothing on their own."""
+level = "recommended"
+verified = "ADMX AutoPlay.admx NoAutoplayfornonVolume, Autorun, NoDriveTypeAutoRun"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', name = "NoDriveTypeAutoRun", dword = 255 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer', name = "NoAutorun", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Explorer', name = "NoAutoplayfornonVolume", dword = 1 },
+]
+
+[[setting]]
+id = "lock-screen-camera-off"
+category = "hardening"
+title = "No camera on the lock screen"
+description = """The camera cannot be started from the lock screen."""
+level = "recommended"
+verified = "ADMX ControlPanelDisplay.admx CPL_Personalization_NoLockScreenCamera"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization', name = "NoLockScreenCamera", dword = 1 },
+]
+
+[[setting]]
+id = "installer-elevation-off"
+category = "hardening"
+title = "Never install with elevated rights by default"
+description = """Windows Installer packages do not get administrator rights automatically."""
+level = "recommended"
+verified = "ADMX MSI.admx AlwaysInstallElevated"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer', name = "AlwaysInstallElevated", dword = 0 },
+]
+
+[[setting]]
+id = "windows-connect-now-off"
+category = "hardening"
+title = "Turn off Windows Connect Now"
+description = """No WPS-style wireless setup wizard and registrars (UPnP, flash drive, in-band Wi-Fi)."""
+level = "recommended"
+verified = "ADMX WindowsConnectNow.admx WCN_DisableWcnUi_2, WCN_EnableRegistrar"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WCN\UI', name = "DisableWcnUi", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WCN\Registrars', name = "EnableRegistrars", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WCN\Registrars', name = "DisableFlashConfigRegistrar", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WCN\Registrars', name = "DisableInBand802DOT11Registrar", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WCN\Registrars', name = "DisableUPnPRegistrar", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WCN\Registrars', name = "DisableWPDRegistrar", dword = 0 },
+]
+
+[[setting]]
+id = "sehop-on"
+category = "hardening"
+title = "Turn on SEHOP"
+description = """Structured exception handler overwrite protection guards every program against a common exploit technique."""
+level = "recommended"
+verified = "Microsoft KB956607 (Session Manager\\kernel!DisableExceptionChainValidation 0)"
+evidence = ["doc", "vm"]
+note = "Spectre/Meltdown overrides (CPU-specific values) and DEP policies are left out: Windows enables these protections by default."
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\kernel', name = "DisableExceptionChainValidation", dword = 0 },
+]
+
+# --- browsers -------------------------------------------------------------------------------------------
+# Browser policies apply as soon as the browser is installed; Edge, Chrome and Firefox are checked against
+# their vendors' ADMX templates (lean11 privacy verify --admx-dir).
+
+[[category]]
+id = "media"
+title = "Media"
+
+[[category]]
+id = "browsers"
+title = "Browsers (Edge, Chrome, Firefox)"
+
+[[setting]]
+id = "edge-telemetry-off"
+category = "browsers"
+title = "Edge sends no diagnostic data"
+description = """Edge sends no diagnostic and usage data, no site information, no feedback and takes no experiments or remote configuration from Microsoft."""
+level = "recommended"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "DiagnosticData", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "MetricsReportingEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "SendSiteInfoToImproveServices", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "UserFeedbackAllowed", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "ExperimentationAndConfigurationServiceControl", dword = 0 },
+]
+
+[[setting]]
+id = "edge-web-services-off"
+category = "browsers"
+title = "Edge uses fewer web services"
+description = """Edge does not send failed addresses, page search terms or connectivity checks to Microsoft services, enhances no images in the cloud and does not start in the background at sign-in."""
+level = "recommended"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "AlternateErrorPagesEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "ResolveNavigationErrorsUseWebService", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "RelatedMatchesCloudServiceEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "EdgeEnhanceImagesEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "StartupBoostEnabled", dword = 0 },
+]
+
+[[setting]]
+id = "edge-ads-off"
+category = "browsers"
+title = "No ads and promotions in Edge"
+description = """Edge shows no recommendations, promotional tabs, shopping-unrelated feature ads, Insider and Acrobat promotions, default top sites, Follow suggestions and personalizes nothing based on browsing history."""
+level = "recommended"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16)"
+note = "NewTabPageHideDefaultTopSites 1 hides the tiles (ADML: true hides them). Ad-free Bing is offered separately as edge-bing-ad-free."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "SpotlightExperiencesAndRecommendationsEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "ShowRecommendationsEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "PromotionalTabsEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "PersonalizationReportingEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "MicrosoftEdgeInsiderPromotionEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "ShowAcrobatSubscriptionButton", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "NewTabPageHideDefaultTopSites", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "EdgeFollowEnabled", dword = 0 },
+]
+
+[[setting]]
+id = "edge-bing-ad-free"
+category = "browsers"
+title = "Ad-free Bing in Edge"
+description = """Bing searches in Edge show no ads. Costs: SafeSearch is forced to Strict and cannot be changed."""
+level = "optional"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16): BingAdsSuppression (enable = ad-free, SafeSearch strict)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "BingAdsSuppression", dword = 1 },
+]
+
+[[setting]]
+id = "edge-shopping-rewards-off"
+category = "browsers"
+title = "No shopping, rewards and search bar extras in Edge"
+description = """Turns off the shopping assistant, Microsoft Rewards, the desktop search bar, Collections, the games menu and in-app support. Costs: these Edge features disappear."""
+level = "strict"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "EdgeShoppingAssistantEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "ShowMicrosoftRewards", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "WebWidgetAllowed", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "WebWidgetIsEnabledOnStartup", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "SearchbarAllowed", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "SearchbarIsEnabledOnStartup", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "EdgeCollectionsEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "AllowGamesMenu", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "InAppSupportEnabled", dword = 0 },
+]
+
+[[setting]]
+id = "edge-copilot-off"
+category = "browsers"
+title = "No Copilot and sidebar in Edge"
+description = """Edge has no sidebar, no Copilot on the new tab page and Copilot cannot read the open page. Costs: no Copilot in Edge."""
+level = "strict"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "HubsSidebarEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "StandaloneHubsSidebarEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "DiscoverPageContextEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "CopilotPageContext", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "CopilotCDPPageContext", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "NewTabPageBingChatEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "EdgeDiscoverEnabled", dword = 0 },
+]
+
+[[setting]]
+id = "edge-search-suggestions-off"
+category = "browsers"
+title = "No search suggestions in the Edge address bar"
+description = """Typing in the address bar sends nothing to the search engine and Microsoft Search in Bing until you press Enter. Costs: no suggestions while typing."""
+level = "strict"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "SearchSuggestEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "AddressBarMicrosoftSearchInBingProviderEnabled", dword = 0 },
+]
+
+[[setting]]
+id = "edge-tracking-protection"
+category = "browsers"
+title = "Strict tracking protection in Edge"
+description = """Edge blocks trackers on the strict level, blocks third-party cookies and sends Do Not Track. Costs: some sites (embedded videos, sign-in across sites) may break."""
+level = "strict"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "TrackingPrevention", dword = 3 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "BlockThirdPartyCookies", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "ConfigureDoNotTrack", dword = 1 },
+]
+
+[[setting]]
+id = "edge-new-tab-plain"
+category = "browsers"
+title = "Plain new tab page in Edge"
+description = """The new tab page loads no quick links and no daily background image from Microsoft."""
+level = "strict"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "NewTabPageQuickLinksEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "NewTabPageAllowedBackgroundTypes", dword = 1 },
+]
+
+[[setting]]
+id = "edge-autofill-off"
+category = "browsers"
+title = "Edge stores no payment and address data"
+description = """Edge neither saves nor fills in credit cards and addresses. Costs: forms must be filled in by hand."""
+level = "strict"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "AutofillCreditCardEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "AutofillAddressEnabled", dword = 0 },
+]
+
+[[setting]]
+id = "edge-site-safety-off"
+category = "browsers"
+title = "Edge looks up no site information"
+description = """Edge does not query Microsoft for information about visited sites and does not sync Family Safety settings."""
+level = "strict"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedge.admx (Microsoft Edge policy templates, 2026-10-16)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "SiteSafetyServicesEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Edge', name = "FamilySafetySettingsEnabled", dword = 0 },
+]
+
+[[setting]]
+id = "edge-no-reinstall"
+category = "browsers"
+title = "Edge Update installs no Edge or WebView2"
+description = """Edge Update may not install Edge (any channel) or WebView2 on its own. Useful when Edge is removed."""
+level = "recommended"
+verified = "ADMX msedgeupdate.admx (Microsoft Edge policy templates, 2026-10-16)"
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "InstallDefault", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "Install{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "Install{2CD8A007-E189-409D-A2C8-9AF4EF3C72AA}", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "Install{65C35B14-6C1D-4122-AC46-7148CC9D6497}", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "Install{0D50BFEC-CD6A-4F9A-964C-C7416E3ACB10}", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "Install{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}", dword = 0 },
+]
+
+[[setting]]
+id = "edge-updates-off"
+category = "browsers"
+title = "No automatic Edge and WebView2 updates"
+description = """Edge Update neither checks for nor installs updates, its services are off. Costs: Edge and WebView2 get no security updates until you update them by hand."""
+level = "optional"
+hidden_if = ["edge-removed"]
+verified = "ADMX msedgeupdate.admx (Microsoft Edge policy templates, 2026-10-16)"
+note = "No update suppression window (1440 is outside the policy's range), no Update{F3C4FE00...} value (no policy) and no debugger block on MicrosoftEdgeUpdate.exe."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "UpdateDefault", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "Update{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "Update{2CD8A007-E189-409D-A2C8-9AF4EF3C72AA}", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "Update{65C35B14-6C1D-4122-AC46-7148CC9D6497}", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "Update{0D50BFEC-CD6A-4F9A-964C-C7416E3ACB10}", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "Update{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\EdgeUpdate', name = "AutoUpdateCheckPeriodMinutes", dword = 0 },
+  { service = "edgeupdate", start = 4 },
+  { service = "edgeupdatem", start = 4 },
+]
+
+[[setting]]
+id = "chrome-telemetry-off"
+category = "browsers"
+title = "Chrome sends no usage statistics and cleanup reports"
+description = """Chrome, if installed later, sends no usage and crash statistics, runs no Chrome Cleanup scans and reports no scan results to Google."""
+level = "recommended"
+verified = "ADMX chrome.admx (Google Chrome policy templates, 2026-10)"
+note = "The software_reporter_tool.exe debugger block (no policy) dropped; ChromeCleanupEnabled 0 keeps the tool from running."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Google\Chrome', name = "MetricsReportingEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Google\Chrome', name = "ChromeCleanupEnabled", dword = 0 },
+  { reg = 'HKLM\SOFTWARE\Policies\Google\Chrome', name = "ChromeCleanupReportingEnabled", dword = 0 },
+]
+
+[[setting]]
+id = "firefox-telemetry-off"
+category = "browsers"
+title = "Firefox sends no telemetry"
+description = """Firefox, if installed later, sends no telemetry and runs no default browser agent in the background."""
+level = "recommended"
+verified = "ADMX firefox.admx (Mozilla policy templates v8.4)"
+note = "Firefox's default browser agent tasks do not exist before Firefox is installed; the policy keeps them from being created."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Mozilla\Firefox', name = "DisableTelemetry", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Mozilla\Firefox', name = "DisableDefaultBrowserAgent", dword = 1 },
+]
+
+[[setting]]
+id = "wmp-online-off"
+category = "media"
+title = "Windows Media Player Legacy goes not online"
+description = """The legacy Windows Media Player retrieves no CD, DVD and music metadata or radio presets from the internet and does not share media on the network."""
+level = "recommended"
+hidden_if = ["option:legacy-capabilities"]
+verified = "ADMX WindowsMediaPlayer.admx PreventCDDVDMetadataRetrieval, PreventMusicFileMetadataRetrieval, PreventRadioPresetsRetrieval (user); service WMPNetworkSvc present in the 26H2 image"
+note = "The UsageTracking preference (no policy) dropped. Hidden when Components removes the legacy Media Player."
+ops = [
+  { reg = 'HKCU\Software\Policies\Microsoft\WindowsMediaPlayer', name = "PreventCDDVDMetadataRetrieval", dword = 1 },
+  { reg = 'HKCU\Software\Policies\Microsoft\WindowsMediaPlayer', name = "PreventMusicFileMetadataRetrieval", dword = 1 },
+  { reg = 'HKCU\Software\Policies\Microsoft\WindowsMediaPlayer', name = "PreventRadioPresetsRetrieval", dword = 1 },
+  { service = "WMPNetworkSvc", start = 4 },
+]
+
+# --- Windows Update ------------------------------------------------------------------------------------
+# Switching Windows Update off is the Components option disable-windows-update; these settings refine it
+# and are hidden when it is off.
+
+[[setting]]
+id = "telemetry-programs-firewall"
+category = "telemetry"
+title = "Firewall blocks the telemetry programs"
+description = """Windows Firewall blocks outgoing traffic of the compatibility telemetry runner, the device census \
+and the CEIP data consolidator, so they send nothing even when started. The rules can be switched off in Windows \
+Defender Firewall."""
+level = "recommended"
+verified = "CompatTelRunner.exe, DeviceCensus.exe and wsqmcons.exe present in the 26H2 image; rule format of the image's own FirewallRules (v2.33)"
+note = """No rules for programs whose blocking breaks Windows Update (MoUsoCoreWorker), activation, SmartScreen, \
+Defender tools, account sign-in (CloudExperienceHost) or app infrastructure (RuntimeBroker, taskhostw, \
+BackgroundTaskHost), for apps lean11 removes, or for packaged apps a path rule may not match (SearchHost)."""
+ops = [
+  { firewall_block = '%SystemRoot%\System32\CompatTelRunner.exe' },
+  { firewall_block = '%SystemRoot%\System32\DeviceCensus.exe' },
+  { firewall_block = '%SystemRoot%\System32\wsqmcons.exe' },
+]
+
+[[setting]]
+id = "error-reporting-firewall"
+category = "error-reporting"
+title = "Firewall blocks the error reporting programs"
+description = """Windows Firewall blocks outgoing traffic of the Windows Error Reporting programs (WerFault, \
+WerFaultSecure and the report queue manager wermgr, 64- and 32-bit), as a second line besides turning error reporting \
+off. Costs: no online solutions for problems."""
+level = "strict"
+sources = ["wermgr.exe and the 32-bit copies"]
+verified = "WerFault.exe, WerFaultSecure.exe and wermgr.exe present in System32 and SysWOW64 of the 26H2 image; rule format of the image's own FirewallRules (v2.33)"
+ops = [
+  { firewall_block = '%SystemRoot%\System32\WerFault.exe' },
+  { firewall_block = '%SystemRoot%\System32\WerFaultSecure.exe' },
+  { firewall_block = '%SystemRoot%\System32\wermgr.exe' },
+  { firewall_block = '%SystemRoot%\SysWOW64\WerFault.exe' },
+  { firewall_block = '%SystemRoot%\SysWOW64\WerFaultSecure.exe' },
+  { firewall_block = '%SystemRoot%\SysWOW64\wermgr.exe' },
+]
+
+[[category]]
+id = "office"
+title = "Microsoft Office (when installed later)"
+description = "Policies that Microsoft 365 Apps and Office 2016 or newer read once they are installed. Nothing of Office is in the image."
+
+[[setting]]
+id = "office-telemetry-off"
+category = "office"
+title = "Office sends no optional diagnostic data"
+description = """Office sends neither optional nor required diagnostic data, takes no part in the Customer \
+Experience Improvement Program, sends no personal information and its telemetry agent neither logs nor uploads."""
+level = "recommended"
+verified = "Office ADMX 5568.1000 (office16.admx): L_SendTelemetry (3 = Neither), L_EnableCustomerExperienceImprovementProgram, L_Sendcustomerdata, L_EnableLogging, L_OfficeInventoryAgentUpload"
+note = "ClientTelemetry!DisableTelemetry and Office 15.0 keys are not used: no policy defines them and Office 2013 is out of support. SendCustomerData only applies to volume licensed Office 2016/2019 (Microsoft Learn: replaced in Microsoft 365 Apps since version 1904)."
+ops = [
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\Common\ClientTelemetry', name = "SendTelemetry", dword = 3 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common', name = "QMEnable", dword = 0 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common', name = "SendCustomerData", dword = 0 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\OSM', name = "EnableLogging", dword = 0 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\OSM', name = "EnableUpload", dword = 0 },
+]
+
+[[setting]]
+id = "office-feedback-off"
+category = "office"
+title = "No Office feedback and surveys"
+description = "Office offers no feedback button (Send a Smile) and no in-product surveys, and sends no screenshots, logs or e-mail address with feedback."
+level = "recommended"
+verified = "Office ADMX 5568.1000 (office16.admx): L_SendFeedback, L_SendSurvey, L_Screenshot, L_LogCollection, L_EmailCollection"
+note = "Uses the policy key, not Office\\16.0\\Common\\Feedback outside the Policies branch."
+ops = [
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common\Feedback', name = "Enabled", dword = 0 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common\Feedback', name = "SurveyEnabled", dword = 0 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common\Feedback', name = "IncludeScreenshot", dword = 0 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common\Feedback', name = "FeedbackIncludeLog", dword = 0 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common\Feedback', name = "IncludeEmail", dword = 0 },
+]
+
+[[setting]]
+id = "office-optional-connected-off"
+category = "office"
+title = "No optional connected experiences in Office"
+description = """Turns off Office's optional online extras that Microsoft offers under its consumer services \
+agreement (for example 3D Maps in Excel, which uses Bing) and the LinkedIn features. Core features, co-authoring \
+and OneDrive storage keep working."""
+level = "recommended"
+sources = ["Microsoft Learn \"Use policy settings to manage privacy controls for Microsoft 365 Apps\""]
+verified = "Office ADMX 5568.1000 (office16.admx): L_OptionalConnectedExperiences (2 = disabled), L_AllowLinkedInFeatures"
+ops = [
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common\Privacy', name = "ControllerConnectedServicesEnabled", dword = 2 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common', name = "LinkedIn", dword = 0 },
+]
+
+[[setting]]
+id = "office-content-services-off"
+category = "office"
+title = "Office does not send or download content for online services"
+description = """Office does not send document content to online services that analyze it, and does not download \
+online content. Costs: no Designer, online translation, Editor suggestions, online pictures and templates."""
+level = "strict"
+sources = ["Microsoft Learn \"Use policy settings to manage privacy controls for Microsoft 365 Apps\""]
+verified = "Office ADMX 5568.1000 (office16.admx): L_OfficeExperiencesAnlayzingContent and L_OfficeExperiencesDownloadingContent (2 = disabled)"
+ops = [
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common\Privacy', name = "UserContentDisabled", dword = 2 },
+  { reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common\Privacy', name = "DownloadContentDisabled", dword = 2 },
+]
+
+[[setting]]
+id = "office-connected-off"
+category = "office"
+title = "No connected experiences in Office at all"
+description = """Turns off most of Office's online features at once. Costs: besides the above also \
+co-authoring, online file storage (OneDrive, SharePoint) and Copilot in Office. Mail sync in Outlook, Teams and \
+licensing keep working."""
+level = "optional"
+sources = ["Microsoft Learn \"Use policy settings to manage privacy controls for Microsoft 365 Apps\""]
+verified = "Office ADMX 5568.1000 (office16.admx): L_ConnectedOfficeExperiences (2 = disabled)"
+ops = [{ reg = 'HKCU\Software\Policies\Microsoft\Office\16.0\Common\Privacy', name = "DisconnectedState", dword = 2 }]
+
+[[category]]
+id = "updates"
+title = "Windows Update"
+
+[[setting]]
+id = "device-metadata-off"
+category = "updates"
+title = "No device metadata from the internet"
+description = "Windows does not download device pictures, names and descriptions for connected hardware from Microsoft."
+level = "recommended"
+verified = "ADMX DeviceSetup.admx DeviceMetadata_PreventDeviceMetadataFromNetwork"
+note = "DeviceMetadataServiceURL and event channel changes (no policy) are not set."
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\Device Metadata', name = "PreventDeviceMetadataFromNetwork", dword = 1 }]
+
+[[setting]]
+id = "update-drivers-off"
+category = "updates"
+title = "No drivers through Windows Update"
+description = """Windows Update installs no drivers, and Windows does not search Windows Update for drivers of \
+new devices. Costs: drivers for new hardware must be installed by hand."""
+level = "strict"
+hidden_if = ["updates-off"]
+verified = "ADMX WindowsUpdate.admx ExcludeWUDriversInQualityUpdate; DeviceSetup.admx DriverSearchPlaces_SearchOrderConfiguration, DriverSearchPlaces_SearchServerConfiguration; ICM.admx DriverSearchPlaces_DontSearchWindowsUpdate"
+note = "The copies below PolicyManager and WindowsUpdate\\UpdatePolicy (no policy, managed by Windows) dropped."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate', name = "ExcludeWUDriversInQualityUpdate", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DriverSearching', name = "SearchOrderConfig", dword = 2 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DriverSearching', name = "DontSearchWindowsUpdate", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DriverSearching', name = "DriverServerSelection", dword = 1 },
+]
+
+[[setting]]
+id = "updates-notify-only"
+category = "updates"
+title = "Ask before downloading updates"
+description = """Windows Update looks for updates and tells you, but downloads and installs nothing on its own. \
+Costs: security updates wait until you start them."""
+level = "optional"
+hidden_if = ["updates-off"]
+verified = "ADMX WindowsUpdate.admx AutoUpdateCfg (AUOptions 2 = notify for download and install)"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU', name = "AUOptions", dword = 2 }]
+
+[[setting]]
+id = "feature-updates-defer"
+category = "updates"
+title = "Postpone feature updates for a year"
+description = """New Windows versions are offered only 365 days after their release; monthly security updates \
+keep coming."""
+level = "optional"
+hidden_if = ["updates-off"]
+verified = "ADMX WindowsUpdate.admx DeferFeatureUpdates (DeferFeatureUpdatesPeriodInDays 0-365)"
+note = "Pause values (no policy in 26H2) and PolicyManager copies are not set."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate', name = "DeferFeatureUpdates", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate', name = "DeferFeatureUpdatesPeriodInDays", dword = 365 },
+]
+
+# --- other programs and system -------------------------------------------------------------------------
+
+[[category]]
+id = "system"
+title = "Developer tools and system"
+
+[[setting]]
+id = "dev-telemetry-off"
+category = "system"
+title = "PowerShell and .NET CLI send no telemetry"
+description = """Sets the documented opt-out variables POWERSHELL_TELEMETRY_OPTOUT and DOTNET_CLI_TELEMETRY_OPTOUT \
+for the whole machine, so PowerShell 7 and the dotnet command never send usage data."""
+level = "recommended"
+verified = "Microsoft Learn about_Telemetry (PowerShell) and \".NET SDK telemetry\": machine environment variables (Session Manager\\Environment)"
+evidence = ["doc", "vm"]
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment', name = "POWERSHELL_TELEMETRY_OPTOUT", sz = "1" },
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment', name = "DOTNET_CLI_TELEMETRY_OPTOUT", sz = "1" },
+]
+
+[[setting]]
+id = "time-server-pool"
+category = "system"
+title = "Use pool.ntp.org as time server"
+description = "Windows synchronizes the clock with the public NTP pool instead of time.windows.com."
+level = "optional"
+verified = "Microsoft Learn \"Windows Time service tools and settings\" (W32Time\\Parameters NtpServer; Type is NTP in the 26H2 image already)"
+evidence = ["doc", "vm"]
+ops = [
+  { reg = 'HKLM\SYSTEM\CurrentControlSet\Services\W32Time\Parameters', name = "NtpServer", sz = "0.pool.ntp.org,0x9 1.pool.ntp.org,0x9 2.pool.ntp.org,0x9 3.pool.ntp.org,0x9" },
+]
+
+[[setting]]
+id = "hibernation-off"
+category = "system"
+title = "Turn off hibernation"
+description = """No hibernation file that keeps a copy of the memory on disk. Costs: no hibernate and no fast \
+startup."""
+level = "optional"
+verified = "Control\\Power!HibernateEnabled (what powercfg -h off sets); VM: powercfg /a reports hibernation unavailable"
+evidence = ["vm"]
+ops = [{ reg = 'HKLM\SYSTEM\CurrentControlSet\Control\Power', name = "HibernateEnabled", dword = 0 }]
+
+# --- further settings ----------------------------------------------------------------------------------------
+
+[[setting]]
+id = "diagtrack-autologger-off"
+category = "telemetry"
+title = "Turn off the telemetry boot logger"
+description = """Disables the Diagtrack-Listener trace session, which records telemetry events from \
+the start of boot for the telemetry service."""
+level = "recommended"
+verified = "Microsoft Learn \"Configuring and Starting an AutoLogger Session\" (Start 0 = session disabled); key present in the 26H2 image"
+evidence = ["doc", "vm"]
+ops = [{ reg = 'HKLM\SYSTEM\CurrentControlSet\Control\WMI\Autologger\Diagtrack-Listener', name = "Start", dword = 0 }]
+
+[[setting]]
+id = "tailored-experiences-off"
+category = "advertising"
+title = "No tailored experiences from diagnostic data"
+description = "Microsoft does not use diagnostic data for personalized tips, ads and recommendations."
+level = "recommended"
+verified = "ADMX CloudContent.admx DisableTailoredExperiencesWithDiagnosticData (user)"
+ops = [{ reg = 'HKCU\Software\Policies\Microsoft\Windows\CloudContent', name = "DisableTailoredExperiencesWithDiagnosticData", dword = 1 }]
+
+[[setting]]
+id = "user-tracking-off"
+category = "activity"
+title = "Turn off user tracking in Start and Explorer"
+description = """Windows does not track which programs and documents you open to personalize Start and \
+Explorer. Costs: no frequent and recent items there."""
+level = "strict"
+verified = "ADMX StartMenu.admx NoInstrumentation (user)"
+ops = [{ reg = 'HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', name = "NoInstrumentation", dword = 1 }]
+
+[[setting]]
+id = "quick-access-history-off"
+category = "explorer"
+title = "No recent files and frequent folders in Explorer"
+description = "Explorer's Home and Quick access list no recently used files and frequent folders. Costs: you navigate to them yourself."
+level = "strict"
+verified = "Settings switches (Explorer!ShowRecent, ShowFrequent, key present in the 26H2 default profile); VM: kept after setup"
+evidence = ["vm"]
+ops = [
+  { reg = 'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer', name = "ShowRecent", dword = 0 },
+  { reg = 'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer', name = "ShowFrequent", dword = 0 },
+]
+
+[[setting]]
+id = "paint-ai-off"
+category = "ai"
+title = "No AI features in Paint"
+description = "Paint offers no Image Creator, Cocreator and generative fill, which send prompts and images to Microsoft."
+level = "recommended"
+hidden_if = ["app-removed:Microsoft.Paint"]
+verified = "ADMX WindowsCopilot.admx DisableImageCreator, DisableCocreator, DisableGenerativeFill"
+note = "The Notepad AI switch and Explorer's AI actions menu have no policy in the 26H2 templates; not included."
+ops = [
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint', name = "DisableImageCreator", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint', name = "DisableCocreator", dword = 1 },
+  { reg = 'HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Paint', name = "DisableGenerativeFill", dword = 1 },
+]
+
+[[setting]]
+id = "connected-devices-off"
+category = "sync"
+title = "Turn off the Connected Devices Platform"
+description = """Disables the services that connect this PC with your phone and other devices through the \
+Microsoft account. Costs: no Phone Link, Nearby sharing and cross-device experiences."""
+level = "strict"
+verified = "services CDPSvc and CDPUserSvc (per-user template) present in the 26H2 image; Microsoft Learn \"Per-user services\" (Start 4 on the template)"
+ops = [{ service = "CDPSvc", start = 4 }, { service = "CDPUserSvc", start = 4 }]
+
+[[setting]]
+id = "user-data-services-off"
+category = "sync"
+title = "Turn off the contacts, calendar and mail data services"
+description = """Disables the per-user services that store and hand out contacts, calendars and mail to apps. \
+Costs: Mail, Calendar, People and apps that use them find no data."""
+level = "strict"
+verified = "per-user service templates UnistoreSvc and UserDataSvc present in the 26H2 image; Microsoft Learn \"Per-user services\""
+ops = [{ service = "UnistoreSvc", start = 4 }, { service = "UserDataSvc", start = 4 }]
+
+[[setting]]
+id = "smart-name-resolution-off"
+category = "network-checks"
+title = "Ask DNS only on the preferred network"
+description = """Windows does not send name queries over all network adapters at once, so lookups made through \
+a VPN do not leak to the local network."""
+level = "recommended"
+verified = "ADMX DnsClient.admx DNS_SmartMultiHomedNameResolution"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient', name = "DisableSmartNameResolution", dword = 1 }]
+
+[[setting]]
+id = "delivery-optimization-lan-only"
+category = "network-checks"
+title = "Peer-to-peer downloads only within the local network"
+description = """Windows Update and the Store may share downloads with PCs on the same network, never with PCs \
+on the internet. An alternative to downloading only from Microsoft."""
+level = "optional"
+conflicts = ["delivery-optimization-http-only"]
+verified = "ADMX DeliveryOptimization.admx DownloadMode (1 = LAN)"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization', name = "DODownloadMode", dword = 1 }]
+
+[[setting]]
+id = "password-reveal-off"
+category = "hardening"
+title = "No password reveal button"
+description = "Password fields do not offer the eye button that shows the typed password."
+level = "recommended"
+verified = "ADMX CredUI.admx DisablePasswordReveal"
+ops = [{ reg = 'HKLM\SOFTWARE\Policies\Microsoft\Windows\CredUI', name = "DisablePasswordReveal", dword = 1 }]
+
+[[setting]]
+id = "pagefile-clear"
+category = "hardening"
+title = "Clear the page file at shutdown"
+description = "The page file, which can hold fragments of memory such as passwords, is wiped on every shutdown. Costs: shutting down takes longer."
+level = "optional"
+verified = "Microsoft Learn security policy \"Shutdown: Clear virtual memory pagefile\" (Memory Management!ClearPageFileAtShutdown); VM p3: reset by setup's security template (INF/defltwk.inf), so written again after setup"
+evidence = ["doc", "vm"]
+ops = [{ reg = 'HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management', name = "ClearPageFileAtShutdown", dword = 1, after_setup = true }]
+
+[[setting]]
+id = "onedrive-pre-signin-off"
+category = "sync"
+title = "OneDrive stays offline until sign-in"
+description = "OneDrive generates no network traffic before a user signs in to it."
+level = "recommended"
+hidden_if = ["onedrive-removed"]
+verified = "ADMX SkyDrive.admx PreventNetworkTrafficPreUserSignIn"
+ops = [{ reg = 'HKLM\SOFTWARE\Microsoft\OneDrive', name = "PreventNetworkTrafficPreUserSignIn", dword = 1 }]
+
+[[setting]]
+id = "retail-demo-off"
+category = "system"
+title = "Turn off the retail demo service"
+description = "Disables the service for the shop demo mode, which is never needed on a personal PC."
+level = "recommended"
+verified = "service RetailDemo present in the 26H2 image"
+ops = [{ service = "RetailDemo", start = 4 }]

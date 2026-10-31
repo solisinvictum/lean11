@@ -1,0 +1,12 @@
+[package]
+name = "lean11-codecs"
+description = "wimlib's XPRESS, LZX and LZMS compressors, translated to Rust (output identical to wimlib)"
+version.workspace = true
+# the generated code is edition 2021 (extern blocks, attributes)
+edition = "2021"
+license = "LGPL-2.1-or-later AND MIT"
+
+[dependencies]
+
+[dev-dependencies]
+ms-compress.workspace = true

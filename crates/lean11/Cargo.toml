@@ -1,0 +1,24 @@
+[package]
+name = "lean11"
+description = "Build trimmed Windows 11 ISOs on Linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+
+log.workspace = true
+env_logger.workspace = true
+lean11-core.workspace = true
+lean11-msdl.workspace = true
+lean11-iso.workspace = true
+lean11-wim.workspace = true
+lean11-hive.workspace = true
+ratatui = "0.30"
+unicode-width = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }

@@ -1,0 +1,9 @@
+[package]
+name = "lean11-iso"
+description = "UDF reader and bootable UDF/El Torito ISO writer for Windows installation media"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true

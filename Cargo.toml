@@ -1,0 +1,46 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+rust-version = "1.96"
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+regex = "1"
+log = "0.4"
+env_logger = "0.11"
+ureq = { version = "3", features = ["cookies"] }
+uuid = { version = "1", features = ["v4"] }
+roxmltree = "0.20"
+toml = { version = "0.9", default-features = false, features = ["parse", "serde", "std"] }
+# WIM format layer (Rust translation of wimlib), LGPL-2.1-or-later OR GPL-3.0-or-later
+wim-format = "0.1.1"
+ms-compress = { version = "0.2.1", default-features = false, features = ["std", "xpress", "lzx", "lzms"] }
+sha1 = "0.10"
+libc = "0.2"
+# winget catalog: source2.msix (zip) with a SQLite index, YAML manifests, MSZIP-compressed data
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
+yaml_serde = "0.10"
+miniz_oxide = "0.9"
+# Pure-Rust MSDelta (DCM/PA30 WinSxS manifests); not on crates.io, pinned to a commit of github.com/jlevere/msdelta
+msdelta = { git = "https://github.com/jlevere/msdelta.git", rev = "fb5ab88843e854f3fd32d553984d8685ae643913", default-features = false, features = ["winsxs"] }
+lean11-core = { path = "crates/lean11-core" }
+lean11-msdl = { path = "crates/lean11-msdl" }
+lean11-iso = { path = "crates/lean11-iso" }
+lean11-hive = { path = "crates/lean11-hive" }
+lean11-wim = { path = "crates/lean11-wim" }
+lean11-codecs = { path = "crates/lean11-codecs" }
+
+[profile.release]
+lto = "thin"
