@@ -729,6 +729,11 @@ impl App {
 
     /// Takes over a typed or picked value.
     fn commit_field(&mut self, field: Field, text: String) {
+        // typed paths may start with ~ like in a shell
+        let text = match field {
+            Field::Source | Field::Output | Field::Work | Field::SshKey | Field::SaveTemplate | Field::LoadTemplate => expand_home(&text),
+            _ => text,
+        };
         match field {
             Field::Source => self.source = text,
             Field::Output => self.output = text,
@@ -1526,15 +1531,29 @@ fn render(f: &mut Frame, app: &mut App) {
             let t = app.build.as_ref();
             let lines: Vec<Line> = t
                 .map(|t| {
+                    // a log entry may hold several lines
+                    let all: Vec<&str> = t.lines.iter().flat_map(|l| l.lines()).collect();
                     let h = body.height.saturating_sub(2) as usize;
-                    let skip = t.lines.len().saturating_sub(h);
-                    t.lines[skip..].iter().map(|l| if l.starts_with("== ") { Line::from(l.clone().bold()) } else if l.starts_with("WARNING") { Line::from(l.clone().yellow()) } else { Line::raw(l.clone()) }).collect()
+                    let skip = all.len().saturating_sub(h);
+                    all[skip..]
+                        .iter()
+                        .map(|l| {
+                            let l = l.to_string();
+                            if l.starts_with("== ") {
+                                Line::from(l.bold())
+                            } else if l.starts_with("WARNING") {
+                                Line::from(l.yellow())
+                            } else {
+                                Line::raw(l)
+                            }
+                        })
+                        .collect()
                 })
                 .unwrap_or_default();
             let title = match t.and_then(|t| t.result.as_ref()) {
-                None => " Building… ".to_string(),
-                Some(Ok(p)) => format!(" Done: {} (q to quit) ", p.display()),
-                Some(Err(_)) => " Failed (q to quit) ".to_string(),
+                None => Line::raw(" Building… "),
+                Some(Ok(p)) => Line::styled(format!(" Done: {} (q to quit) ", p.display()), rating_style(Some(Rating::Safe)).add_modifier(Modifier::BOLD)),
+                Some(Err(_)) => Line::styled(" Failed (q to quit) ", rating_style(Some(Rating::Breaks)).add_modifier(Modifier::BOLD)),
             };
             f.render_widget(Paragraph::new(lines).block(Block::bordered().title(title)), body);
             if let Some(Err(e)) = t.and_then(|t| t.result.as_ref()) {
@@ -1552,6 +1571,7 @@ fn render(f: &mut Frame, app: &mut App) {
         Step::Custom => "l reload   Tab kind   / filter   Space remove/disable/none   Enter next   Esc back",
         Step::Software => "↑↓ move   Space toggle   t/x load/save template   Enter next   Esc back",
         Step::Settings => "↑↓ move   Space change/edit   t/x load/save template   Enter next   Esc back",
+        Step::Build if app.build.as_ref().is_some_and(|b| b.result.is_some()) => "q quit",
         Step::Build => "s stop after the current stage (resumable)",
         _ => "↑↓ move   Enter next   Esc back   q quit",
     };
@@ -1615,6 +1635,19 @@ fn render(f: &mut Frame, app: &mut App) {
     }
     if let Some((_, p)) = &mut app.picker {
         p.render(f);
+    }
+}
+
+/// Replaces a leading `~` (alone or followed by a path separator) with the home directory, as a shell would.
+fn expand_home(text: &str) -> String {
+    let t = text.trim();
+    let rest = match t.strip_prefix('~') {
+        Some(r) if r.is_empty() || r.starts_with('/') || r.starts_with('\\') => r,
+        _ => return text.to_string(),
+    };
+    match std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).filter(|h| !h.is_empty()) {
+        Some(h) => format!("{}{rest}", h.to_string_lossy()),
+        None => text.to_string(),
     }
 }
 
@@ -1739,5 +1772,16 @@ mod tests {
         assert_eq!(fit("abc", 5), "abc  ");
         assert_eq!(fit("abcdef", 4), "abc…");
         assert_eq!(UnicodeWidthStr::width(fit("服务主机本地系统", 7).as_str()), 7);
+    }
+
+    #[test]
+    fn home_expansion() {
+        assert_eq!(expand_home("/data/win.iso"), "/data/win.iso");
+        assert_eq!(expand_home("~user/win.iso"), "~user/win.iso");
+        if let Some(h) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+            let h = h.to_string_lossy().into_owned();
+            assert_eq!(expand_home("~/Downloads/win.iso"), format!("{h}/Downloads/win.iso"));
+            assert_eq!(expand_home(" ~ "), h);
+        }
     }
 }

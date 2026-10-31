@@ -1071,7 +1071,7 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "lean11"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1090,14 +1090,14 @@ dependencies = [
 
 [[package]]
 name = "lean11-codecs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ms-compress",
 ]
 
 [[package]]
 name = "lean11-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "hex",
@@ -1118,21 +1118,21 @@ dependencies = [
 
 [[package]]
 name = "lean11-hive"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "lean11-iso"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
 ]
 
 [[package]]
 name = "lean11-msdl"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "hex",
@@ -1151,7 +1151,7 @@ dependencies = [
 
 [[package]]
 name = "lean11-wim"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "lean11-codecs",

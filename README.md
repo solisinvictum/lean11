@@ -7,6 +7,43 @@ servicing store, component manifests, provisioned apps, offline registry, Task S
 
 The interface is a CLI and a terminal wizard (TUI).
 
+![lean11 wizard: from the Windows ISO to a trimmed ISO](docs/media/lean11-demo.gif)
+
+*The wizard on a real Windows 11 26H2 ISO: pick the build, the edition, components, privacy settings, custom
+removals and extra software, then build. The waits for the image inventory and the build (about 30 minutes) are
+cut out.*
+
+## What it looks like
+
+Every removable item carries a traffic-light rating with what it is, what happens without it and how that was
+verified: **green** only the item goes, **yellow** other functions are affected, **red** setup or Windows breaks
+(proven by a test install). See [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md).
+
+<table>
+<tr>
+<td width="50%"><img src="docs/media/components.png" alt="Components step"><br>
+<b>Components.</b> The bundled apps and features lean11 removes, each with its rating and the effect of removing
+it.</td>
+<td width="50%"><img src="docs/media/privacy.png" alt="Privacy step"><br>
+<b>Privacy.</b> A curated catalog of settings (telemetry, ads, app permissions, ...) with their documentation;
+<code>r</code> selects all recommended ones.</td>
+</tr>
+<tr>
+<td><img src="docs/media/custom.png" alt="Custom step"><br>
+<b>Custom.</b> The full inventory of the chosen edition: apps, features, capabilities, packages, services and
+drivers, system apps. Names come from the image (a German ISO here); red items break Windows.</td>
+<td><img src="docs/media/software.png" alt="Software step"><br>
+<b>Software.</b> Programs installed at the end of setup, in their latest version from the winget catalog and checked
+by SHA-256.</td>
+</tr>
+<tr>
+<td><img src="docs/media/review.png" alt="Review step"><br>
+<b>Review.</b> Everything that will happen, before anything is written.</td>
+<td><img src="docs/media/build.png" alt="Finished build"><br>
+<b>Build.</b> The image is extracted, serviced natively and written back; the ISO comes with its SHA-256.</td>
+</tr>
+</table>
+
 ## Install
 
 Download the archive for your system from the [releases page](../../releases) and unpack it:
