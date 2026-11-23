@@ -45,12 +45,34 @@ impl Arch {
     pub fn host() -> Self {
         if cfg!(target_arch = "aarch64") { Arch::Arm64 } else { Arch::X64 }
     }
+    pub fn name(self) -> &'static str {
+        match self {
+            Arch::X64 => "x64",
+            Arch::Arm64 => "arm64",
+        }
+    }
     fn download_type(self) -> i64 {
         match self {
             Arch::X64 => 1,
             Arch::Arm64 => 2,
         }
     }
+}
+
+/// Language (locale such as "de-de") and architecture an ISO file name names: lean11's downloads
+/// (`Windows11_Client_x64_de-de_26300_9457.iso`) and Microsoft's media
+/// (`de-de_windows_11_consumer_editions_version_26h2_x64_dvd_fdd0960a.iso`).
+pub fn media_from_file_name(name: &str) -> Option<(String, Arch)> {
+    let stem = name.rsplit_once('.').map_or(name, |(s, _)| s).to_ascii_lowercase();
+    let tokens: Vec<&str> = stem.split(['_', ' ']).collect();
+    let arch = tokens.iter().find_map(|t| Arch::parse(t).ok())?;
+    let is_locale = |t: &str| {
+        let mut p = t.split('-');
+        let (a, b) = (p.next().unwrap_or(""), p.next().unwrap_or(""));
+        (2..=3).contains(&a.len()) && a.bytes().all(|c| c.is_ascii_lowercase()) && (2..=4).contains(&b.len()) && b.bytes().all(|c| c.is_ascii_alphanumeric())
+    };
+    let lang = tokens.iter().find(|t| is_locale(t))?;
+    Some((lang.to_string(), arch))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -548,6 +570,10 @@ mod tests {
         assert!(validate_iso_url("https://evil.example/a.iso").is_err());
         assert!(validate_iso_url("http://software.download.prss.microsoft.com/a.iso").is_err());
         assert!(manual("https://software.download.prss.microsoft.com/db/Win11_x64.iso?t=1", None).is_ok());
+        assert_eq!(media_from_file_name("Windows11_Client_x64_de-de_26300_9457.iso"), Some(("de-de".into(), Arch::X64)));
+        assert_eq!(media_from_file_name("Windows11_Client_arm64_en-us_26300_9457.iso"), Some(("en-us".into(), Arch::Arm64)));
+        assert_eq!(media_from_file_name("de-de_windows_11_consumer_editions_version_26h2_x64_dvd_fdd0960a.iso"), Some(("de-de".into(), Arch::X64)));
+        assert_eq!(media_from_file_name("lean11.iso"), None);
         assert!(manual("https://software.download.prss.microsoft.com/db/setup.exe", None).is_err());
         assert!(manual("https://evil.example/Win11.iso", None).is_err());
         // the language list Microsoft returned on 23.10.2026

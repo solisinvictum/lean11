@@ -71,6 +71,9 @@ pub struct Recipe {
     /// The user accepted choices rated `breaks` (setup or Windows fails with them).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub breaking_acknowledged: bool,
+    /// Only write a USB stick (the "Write USB stick" stage), no ISO file.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_iso: bool,
 }
 
 impl Recipe {
@@ -185,6 +188,7 @@ pub enum Stage {
     Compressed,
     BootImage,
     Iso,
+    Usb,
     Done,
 }
 
@@ -353,6 +357,7 @@ fn recipe_digest(r: &Recipe) -> Result<String> {
     use sha2::{Digest, Sha256};
     let mut r = r.clone();
     r.output = PathBuf::new();
+    r.no_iso = false;
     Ok(hex::encode(Sha256::digest(serde_json::to_vec(&r)?)))
 }
 
@@ -466,7 +471,13 @@ pub struct Builder<'a> {
     current_stage: String,
     log_file: std::cell::RefCell<fs::File>,
     sink: std::cell::RefCell<&'a mut dyn FnMut(&str)>,
+    /// Writes the finished media folder to a USB stick (set by the CLI or TUI, which handle the drive
+    /// choice and administrator rights); runs as the stage after the ISO.
+    usb: Option<UsbWriter<'a>>,
 }
+
+/// Called with the media folder and a log function.
+pub type UsbWriter<'a> = Box<dyn FnMut(&Path, &mut dyn FnMut(&str)) -> Result<()> + 'a>;
 
 pub fn is_root() -> bool {
     lean11_wim::platform::is_admin()
@@ -537,14 +548,19 @@ impl<'a> Builder<'a> {
         {
             bail!("The saved removal choices of this job changed after it was saved; start a new build.");
         }
+        let renamed = output.is_some();
         if let Some(o) = output {
             job.recipe.output = o;
         }
-        if job.recipe.output.exists() {
+        // the ISO of this job exists and only the USB stick is left: keep the ISO
+        let iso_done = job.stage == Stage::Iso
+            && !renamed
+            && job.sha256.as_ref().is_some_and(|want| file_digest(&job.recipe.output).is_ok_and(|(_, got)| &got == want));
+        if !job.recipe.no_iso && !iso_done && job.recipe.output.exists() {
             bail!("{} already exists; resume with --out <new name>", job.recipe.output.display());
         }
         // the ISO stage finished but its output is not there (new name or removed): write it again
-        if job.stage == Stage::Iso {
+        if job.stage == Stage::Iso && !iso_done {
             job.stage = Stage::BootImage;
         }
         check_host(dir, &job.recipe.output, 0)?;
@@ -593,7 +609,7 @@ impl<'a> Builder<'a> {
 
     fn with(dir: PathBuf, job: Job, lock: fs::File, sink: &'a mut dyn FnMut(&str)) -> Result<Self> {
         let log_file = fs::OpenOptions::new().create(true).append(true).open(dir.join("build.log"))?;
-        let b = Builder { dir, job, _lock: lock, cancel: None, current_stage: "Prepare".into(), log_file: log_file.into(), sink: std::cell::RefCell::new(sink) };
+        let b = Builder { dir, job, _lock: lock, cancel: None, current_stage: "Prepare".into(), log_file: log_file.into(), sink: std::cell::RefCell::new(sink), usb: None };
         b.save()?;
         Ok(b)
     }
@@ -672,7 +688,15 @@ impl<'a> Builder<'a> {
         self.save()
     }
 
+    /// Adds the "Write USB stick" stage.
+    pub fn set_usb(&mut self, w: UsbWriter<'a>) {
+        self.usb = Some(w);
+    }
+
     pub fn run(&mut self) -> Result<PathBuf> {
+        if self.job.recipe.no_iso && self.usb.is_none() {
+            bail!("This build writes no ISO, so it needs a USB stick to write to (--usb).");
+        }
         if lacks_privileges() {
             bail!("building with LEAN11_WIMLIB=1 needs root (WIM images are mounted read-write through FUSE)");
         }
@@ -723,7 +747,26 @@ impl<'a> Builder<'a> {
         })?;
         self.stage(Stage::Compressed, "Compress image", Self::compress)?;
         self.stage(Stage::BootImage, "Setup image", Self::boot_image)?;
-        self.stage(Stage::Iso, "Create ISO", Self::make_iso)
+        if !self.job.recipe.no_iso {
+            self.stage(Stage::Iso, "Create ISO", Self::make_iso)?;
+        }
+        if let Some(mut w) = self.usb.take() {
+            // a finished USB stage of an earlier run is written again: the drive may have changed
+            if self.job.stage >= Stage::Usb {
+                self.job.stage = if self.job.recipe.no_iso { Stage::BootImage } else { Stage::Iso };
+            }
+            let media = self.media();
+            // without an ISO stage nothing has written the answer file yet
+            let r = self.stage(Stage::Usb, "Write USB stick", |b| {
+                if b.job.recipe.no_iso {
+                    b.write_unattend()?;
+                }
+                w(&media, &mut |l| b.log(l))
+            });
+            self.usb = Some(w);
+            r?;
+        }
+        Ok(())
     }
 
     fn cleanup_work(&mut self) {
@@ -1520,7 +1563,9 @@ impl<'a> Builder<'a> {
 
     // ---------------------------------------------------------------- iso
 
-    fn make_iso(&mut self) -> Result<()> {
+    /// Writes `autounattend.xml` to the media root: both the ISO and the USB stick need it (without it setup
+    /// asks every question and neither the first-sign-in scripts nor SetupComplete's fallbacks run).
+    fn write_unattend(&mut self) -> Result<()> {
         let media = self.media();
         let arch = self.job.image.as_ref().map(|i| i.arch().to_string()).unwrap_or_else(|| "x64".into());
         let xml = unattend::build(&unattend::UnattendOptions {
@@ -1540,7 +1585,13 @@ impl<'a> Builder<'a> {
         });
         fs::write(media.join("autounattend.xml"), xml)?;
         self.record_media("autounattend.xml")?;
-        self.save()?;
+        self.save()
+    }
+
+    fn make_iso(&mut self) -> Result<()> {
+        self.write_unattend()?;
+        let media = self.media();
+        let arch = self.job.image.as_ref().map(|i| i.arch().to_string()).unwrap_or_else(|| "x64".into());
         let has = |p: &str| lean11_wim::resolve_ci(&media, p).is_some_and(|f| f.is_file());
         let uefi = if self.job.recipe.no_prompt && has(lean11_iso::UEFI_BOOT_NOPROMPT) { lean11_iso::UEFI_BOOT_NOPROMPT } else { lean11_iso::UEFI_BOOT };
         let rel = |p: &str| -> Option<String> {
@@ -1713,6 +1764,7 @@ pub fn recipe_for(mode: Mode, source: PathBuf, output: PathBuf) -> Recipe {
         adapt_actions: false,
         software: Vec::new(),
         breaking_acknowledged: false,
+        no_iso: false,
     }
 }
 

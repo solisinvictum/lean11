@@ -1,0 +1,29 @@
+[package]
+name = "lean11-usb"
+description = "Bootable Windows installation USB sticks (MBR + FAT32 for UEFI and BIOS): media planning, writing, verifying and removable-drive handling"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+uuid.workspace = true
+roxmltree.workspace = true
+lean11-iso.workspace = true
+lean11-wim.workspace = true
+# FAT32 formatting and file writing (MIT), partition slices (MIT), MBR partition table (MIT OR Apache-2.0)
+# without "chrono": its time-zone lookup links CoreFoundation on macOS (no SDK in cross builds); the
+# file times come from fat::SystemTimeProvider instead
+fatfs = { version = "0.3.6", default-features = false, features = ["std", "alloc"] }
+fscommon = "0.1.1"
+mbrman = "0.7.0"
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_Security", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_SystemInformation", "Win32_System_Registry"] }

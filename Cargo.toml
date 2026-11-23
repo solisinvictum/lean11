@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.4"
+version = "0.2.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 rust-version = "1.96"
@@ -41,6 +41,7 @@ lean11-iso = { path = "crates/lean11-iso" }
 lean11-hive = { path = "crates/lean11-hive" }
 lean11-wim = { path = "crates/lean11-wim" }
 lean11-codecs = { path = "crates/lean11-codecs" }
+lean11-usb = { path = "crates/lean11-usb" }
 
 [profile.release]
 lto = "thin"

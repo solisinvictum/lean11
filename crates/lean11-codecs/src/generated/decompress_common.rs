@@ -136,7 +136,9 @@ pub unsafe extern "C" fn make_huffman_decode_table(
             ) as aliased_word_t;
             let mut n: ::core::ffi::c_uint = stores_per_loop;
             loop {
-                *(entry_ptr as *mut aliased_word_t) = v;
+                // the C code stores machine words at 2-byte aligned addresses (may_alias); in Rust that has to be
+                // an unaligned write
+                (entry_ptr as *mut aliased_word_t).write_unaligned(v);
                 entry_ptr =
                     entry_ptr.offset(::core::mem::size_of::<aliased_word_t>() as usize as isize);
                 n = n.wrapping_sub(1);

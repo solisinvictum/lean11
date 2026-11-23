@@ -550,29 +550,42 @@ pub fn image_refs(meta: &Metadata<'_>, refs: &mut HashMap<[u8; 20], (u32, String
 
 /// Exports one image of `src` into a new WIM/ESD `dest` (like `wimlib-imagex export … --check`).
 pub fn export(src: &Path, index: u32, dest: &Path, compression: Compression, log: Log) -> Result<()> {
+    export_images(src, &[index], dest, compression, log)
+}
+
+/// Exports the given images (in this order) into a new archive; `&[]` exports all of them.
+pub fn export_images(src: &Path, indices: &[u32], dest: &Path, compression: Compression, log: Log) -> Result<()> {
     let wim = Wim::open(src)?;
-    if index == 0 || index > wim.image_count() {
-        bail!("{} has no image {index}", src.display());
-    }
-    let raw = wim.metadata(index)?;
-    let meta = Metadata::parse(&raw).map_err(pe)?;
+    let all: Vec<u32> = (1..=wim.image_count()).collect();
+    let indices = if indices.is_empty() { &all[..] } else { indices };
+    let mut raws = Vec::with_capacity(indices.len());
     let mut refs = HashMap::new();
-    image_refs(&meta, &mut refs);
+    for &index in indices {
+        if index == 0 || index > wim.image_count() {
+            bail!("{} has no image {index}", src.display());
+        }
+        let raw = wim.metadata(index)?;
+        image_refs(&Metadata::parse(&raw).map_err(pe)?, &mut refs);
+        raws.push(raw);
+    }
     let mut blobs = Vec::with_capacity(refs.len());
     for (hash, (n, name)) in refs {
         let lb = wim.lookup().find(&hash).ok_or_else(|| anyhow!("blob {} ({name}) is missing from {}", hex(&hash), src.display()))?;
         blobs.push(Blob { hash, size: lb.size, src: BlobSrc::Wim(0), refs: n, sort_key: sort_key(&name) });
     }
-    let xml = wim.xml()?.select_images(&[index]).map_err(pe)?;
-    let boot = if wim.header().boot_index == index { 1 } else { 0 };
+    let xml = wim.xml()?.select_images(indices).map_err(pe)?;
+    let boot = indices.iter().position(|&i| i == wim.header().boot_index).map(|p| p as u32 + 1).unwrap_or(0);
     let codec = Codec::of(compression);
-    log(&format!("Exporting image {index} of {} to {} ({:?}{})", src.display(), dest.display(), codec.kind, if codec.solid { ", solid" } else { "" }));
+    let what = if indices.len() == 1 { format!("image {}", indices[0]) } else { format!("{} images", indices.len()) };
+    log(&format!("Exporting {what} of {} to {} ({:?}{})", src.display(), dest.display(), codec.kind, if codec.solid { ", solid" } else { "" }));
     let sources = [&wim];
     // created outside the cleanup below: an existing dest must be refused, never removed
     let mut w = WimWriter::create(dest, codec, &sources)?;
     let r = (|| {
         w.write_blobs(blobs, log)?;
-        w.add_metadata(&raw)?;
+        for raw in &raws {
+            w.add_metadata(raw)?;
+        }
         w.finish(xml, boot, true)
     })();
     if r.is_err() {

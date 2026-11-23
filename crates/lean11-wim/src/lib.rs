@@ -13,6 +13,7 @@ use anyhow::{Context, Result, anyhow, bail};
 
 pub mod native;
 pub mod platform;
+pub mod split;
 pub mod workspace;
 pub mod write;
 

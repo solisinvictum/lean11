@@ -98,7 +98,7 @@ lean11 checks this before it starts.
 
 ```sh
 lean11 tui                                   # wizard: mode, source/download, edition, components, privacy, custom, software, settings
-lean11 download --lang de-DE --out ~/iso          # latest Windows 11 ISO from Microsoft
+lean11 download --lang de-DE --out ~/iso          # latest Windows 11 ISO from Microsoft (x64; --arch arm64 for ARM PCs)
 lean11 build Win11.iso --out lean11.iso      # Lean11 (serviceable), recovery ESD
 lean11 build Win11.iso --mode core --accept-core --out lean11-core.iso
 lean11 build Win11.iso --mode custom --enable clipchamp --core --accept-core --turbo --out custom.iso
@@ -191,13 +191,47 @@ lean11 build Win11.iso --template mine.json --privacy-disable hibernation-off --
 
 In the TUI `t` loads and `x` saves a template (in the Mode, Components, Privacy, Settings and Review steps). A
 recipe (`s` in Review) is different: it records one build including source and output. A recipe file can also be
-loaded as a template.
+loaded as a template. When the ISO a recipe names is missing (a recipe from another machine), lean11 takes the
+same file from its downloads folder or offers to download it (language and architecture from the file name);
+`lean11 build NEW.iso --recipe recipe.json` uses another ISO.
 
 The image inventory for custom actions is read in the background as soon as the edition is chosen (it takes a
 few minutes); `l` in the Custom step reads it again.
 
 Each build keeps `job.json`, `recipe.json`, `build.log`, `report.json`, `operations.json` and `timings.json` in
 its job folder. Core images cannot be updated or serviced: use them only in test VMs.
+
+### USB stick
+
+lean11 writes a bootable installation stick itself, no Rufus or Ventoy needed: right after a build, instead of
+the ISO, or from any Windows 11 ISO (also an untouched one from Microsoft).
+
+```sh
+lean11 usb --list                            # drives that can be written (USB and removable only)
+lean11 usb lean11.iso                        # pick the drive, confirm, write and check
+lean11 usb Win11.iso --device /dev/sdb       # any Windows 11 ISO or media folder; macOS /dev/disk4, Windows \\.\PhysicalDrive2
+lean11 usb lean11.iso --image stick.img      # a disk image instead of a drive (for VMs or dd)
+lean11 build Win11.iso --out lean11.iso --usb             # ISO and stick (the drive is chosen before the build)
+lean11 build Win11.iso --usb /dev/sdb --usb-only          # only the stick, no ISO file
+```
+
+After a build in a terminal lean11 also asks whether to write the new ISO to a stick. In the TUI, Settings has
+"Output" (ISO file, USB stick only, or both) and "USB stick"; after an ISO build `u` writes it.
+
+- The stick boots on UEFI (Secure Boot stays on, the loaders are Microsoft-signed) and on legacy BIOS: one active
+  FAT32 partition in an MBR table, only as large as the files need. The BIOS boot code is taken from
+  `boot\bootsect.exe` of the medium itself.
+- FAT32 holds no file larger than 4 GiB. A larger `install.wim` is split into `install.swm`, `install2.swm`, ...
+  (Setup reads split images directly); a larger `install.esd` is first converted to an LZX WIM, which takes a few
+  minutes.
+- Everything written is read back and compared by SHA-256 (`--no-verify` skips it).
+- Only USB or removable drives are offered, never the system disk. lean11 shows the drive with its partitions and
+  asks before it erases anything (`--yes` skips the question).
+- lean11 itself runs without root: only the small step that writes the drive asks for administrator rights
+  (`sudo` or `pkexec` on Linux, `sudo` on macOS, the UAC prompt on Windows). The TUI leaves the full-screen view
+  for that moment.
+- A mounted Ventoy stick is recognized: lean11 offers to copy the ISO onto it instead of erasing it
+  (`--no-ventoy` erases it).
 
 ## Build from source
 

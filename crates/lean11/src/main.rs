@@ -8,6 +8,8 @@ use lean11_msdl::{Arch, Catalog};
 
 mod picker;
 mod tui;
+mod usb;
+use usb::UsbArgs;
 
 #[derive(Parser)]
 #[command(name = "lean11", version, about = "Build trimmed, private Windows 11 ISOs")]
@@ -23,7 +25,7 @@ enum Cmd {
         /// Language name ("German") or locale ("de-DE"); default: $LANG
         #[arg(long)]
         lang: Option<String>,
-        /// x64 or arm64; default: host architecture
+        /// x64 (Intel/AMD PCs) or arm64 (ARM PCs); default x64, whatever machine lean11 runs on
         #[arg(long)]
         arch: Option<String>,
         /// Target directory
@@ -64,6 +66,9 @@ enum Cmd {
     /// Developer tool: export one WIM image with the native writer (fast, lzx, maximum, recovery)
     #[command(hide = true)]
     WimExport { src: PathBuf, index: u32, dest: PathBuf, compression: String },
+    /// Developer tool: split a (non-solid) WIM into SWM parts of at most <MIB> MiB
+    #[command(hide = true)]
+    WimSplit { src: PathBuf, first: PathBuf, #[arg(default_value_t = 3800)] mib: u64 },
     /// Developer tool: extract an image, run a shell command on it ($WS = directory), commit it back
     #[command(hide = true)]
     WimEdit { wim: PathBuf, index: u32, dir: PathBuf, command: String },
@@ -113,6 +118,19 @@ enum Cmd {
         /// Working directory for the extracted install image (default: next to the source)
         #[arg(long)]
         work: Option<PathBuf>,
+    },
+    /// Write Windows installation media (a built ISO, any Windows 11 ISO or a media folder) to a bootable
+    /// USB stick (UEFI with Secure Boot and BIOS) or a disk image; copies the ISO onto a Ventoy stick instead
+    Usb(UsbArgs),
+    /// Helper for `usb` with administrator rights (internal)
+    #[command(hide = true)]
+    UsbWrite {
+        plan: PathBuf,
+        /// SHA-256 of the plan file (set by lean11 when it starts the helper)
+        #[arg(long)]
+        sha256: String,
+        #[arg(long)]
+        log: Option<PathBuf>,
     },
     /// List unfinished jobs (a working directory or one job folder) and release their leftover mounts;
     /// --discard removes their working copies (logs, recipe and reports stay)
@@ -287,7 +305,8 @@ struct BuildArgs {
     /// Volume label (default: the source's)
     #[arg(long)]
     label: Option<String>,
-    /// Load the recipe from a JSON file (other options are ignored)
+    /// Load the recipe from a JSON file (other options are ignored; a SOURCE given replaces the recipe's ISO,
+    /// a missing ISO is offered for download)
     #[arg(long)]
     recipe: Option<PathBuf>,
     /// Start from a template (the choice saved with --save-template or in the TUI, also a recipe file);
@@ -304,6 +323,15 @@ struct BuildArgs {
     /// Resume an interrupted job (its directory)
     #[arg(long)]
     resume: Option<PathBuf>,
+    /// Also write the result to a bootable USB stick (asks for the drive when none is given)
+    #[arg(long, num_args = 0..=1, default_missing_value = "", value_name = "DEVICE")]
+    usb: Option<String>,
+    /// Only write the USB stick, no ISO file (with --usb)
+    #[arg(long)]
+    usb_only: bool,
+    /// Do not ask before erasing the USB stick
+    #[arg(long)]
+    yes: bool,
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -345,12 +373,19 @@ fn main() -> Result<()> {
     // downloads and the TUI keep Rust's default so a closed pipe never kills a mounted image operation
     // (no SIGPIPE on Windows: a closed pipe is a write error there)
     #[cfg(unix)]
-    if !matches!(cli.cmd, Cmd::Build(_) | Cmd::Tui { .. } | Cmd::Download { .. } | Cmd::Cbs { .. } | Cmd::Apps { .. } | Cmd::Recover { .. } | Cmd::WimExport { .. } | Cmd::WimEdit { .. } | Cmd::WimExtract { .. }) {
+    if !matches!(cli.cmd, Cmd::Build(_) | Cmd::Tui { .. } | Cmd::Download { .. } | Cmd::Cbs { .. } | Cmd::Apps { .. } | Cmd::Recover { .. } | Cmd::WimExport { .. } | Cmd::WimEdit { .. } | Cmd::WimExtract { .. } | Cmd::Usb(_) | Cmd::UsbWrite { .. }) {
         unsafe {
             signal(13, 0);
         }
     }
     match cli.cmd {
+        Cmd::WimSplit { src, first, mib } => {
+            let parts = lean11_wim::split::split(&src, &first, mib << 20, &mut |l| eprintln!("{l}"))?;
+            for p in parts {
+                println!("{}", p.display());
+            }
+            Ok(())
+        }
         Cmd::WimExport { src, index, dest, compression } => {
             let t = std::time::Instant::now();
             let c = match compression.as_str() {
@@ -401,6 +436,8 @@ fn main() -> Result<()> {
         Cmd::Build(a) => build(a),
         Cmd::Tui { source } => tui::run(source),
         Cmd::Info { source } => info(source),
+        Cmd::Usb(a) => usb::usb_cmd(a),
+        Cmd::UsbWrite { plan, sha256, log } => usb::usb_write_cmd(&plan, &sha256, log.as_deref()),
         Cmd::Recover { work, discard } => {
             let jobs = lean11_core::build::recover(&work, discard, &mut |l| eprintln!("{l}"))?;
             for (dir, stage) in &jobs {
@@ -527,9 +564,11 @@ fn main() -> Result<()> {
 }
 
 fn download(lang: Option<String>, arch: Option<String>, out: PathBuf, list: bool, resolve_only: bool) -> Result<()> {
+    // the PC that gets installed decides, not the build machine (an ARM Mac builds for x64 PCs too)
+    let explicit = arch.is_some();
     let arch = match arch {
         Some(a) => Arch::parse(&a)?,
-        None => Arch::host(),
+        None => Arch::X64,
     };
     let catalog = Catalog::open(arch)?;
     if list {
@@ -548,10 +587,18 @@ fn download(lang: Option<String>, arch: Option<String>, out: PathBuf, list: bool
         return Ok(());
     }
     eprintln!("{} ({}, {:?})", media.description, media.language, media.arch);
+    if !explicit {
+        eprintln!("x64 ISO for Intel/AMD PCs; --arch arm64 downloads the one for ARM PCs.");
+    }
     fetch(media, out)
 }
 
 fn fetch(media: lean11_msdl::OfficialMedia, out: PathBuf) -> Result<()> {
+    fetch_path(media, out).map(|_| ())
+}
+
+/// Downloads the ISO into `out` and returns its path.
+fn fetch_path(media: lean11_msdl::OfficialMedia, out: PathBuf) -> Result<PathBuf> {
     let dest = out.join(&media.file_name);
     let mut last = std::time::Instant::now();
     let (path, hash) = lean11_msdl::download(&media, &dest, &mut |done, total| {
@@ -566,7 +613,7 @@ fn fetch(media: lean11_msdl::OfficialMedia, out: PathBuf) -> Result<()> {
     })?;
     eprintln!();
     println!("{}  {}", hash, path.display());
-    Ok(())
+    Ok(path)
 }
 
 fn bar(label: &str, done: u64, total: u64, last: &mut std::time::Instant) {
@@ -676,16 +723,25 @@ fn build(a: BuildArgs) -> Result<()> {
         let _ = writeln!(std::io::stderr(), "{m}");
     };
     if let Some(dir) = &a.resume {
+        // the drive is chosen and confirmed now, not after the build
+        let target = usb_target(&a)?;
         let mut b = Builder::resume(dir, a.out.clone(), &mut sink)?;
         b.cancel = Some(stop_flag());
+        if let Some(t) = target {
+            b.set_usb(usb_writer(t));
+        }
         let out = b.run()?;
-        println!("{}", out.display());
-        return Ok(());
+        return finish_build(&a, &out, false);
     }
     let recipe: Recipe = if let Some(r) = &a.recipe {
         // modified preset recipes load as Custom (Core's removals kept)
         let mut r: Recipe = serde_json::from_slice(&std::fs::read(r)?)?;
         r.normalize_mode();
+        if let Some(s) = &a.source {
+            r.source = s.clone();
+        } else if !r.source.exists() {
+            r.source = download_recipe_iso(&r, a.work.as_deref())?;
+        }
         r
     } else {
         // a template needs no source when it is only saved
@@ -804,11 +860,88 @@ fn build(a: BuildArgs) -> Result<()> {
         Some(w) => w.clone(),
         None => out_abs.parent().unwrap_or(std::path::Path::new(".")).join("lean11-work"),
     };
+    let mut recipe = recipe;
+    recipe.no_iso = a.usb_only;
+    let target = usb_target(&a)?;
     let mut b = Builder::new(&work, recipe, &mut sink)?;
     b.cancel = Some(stop_flag());
+    let usb_done = target.is_some();
+    if let Some(t) = target {
+        b.set_usb(usb_writer(t));
+    }
     eprintln!("Ctrl+C stops after the current stage; the job stays resumable.");
     let out = b.run()?;
+    finish_build(&a, &out, usb_done)
+}
+
+/// The recipe's ISO is not here (a recipe from another machine): on a terminal offer to download the ISO its
+/// file name names (language, architecture), into `<work>/downloads`.
+fn download_recipe_iso(r: &lean11_core::build::Recipe, work: Option<&std::path::Path>) -> Result<PathBuf> {
+    use std::io::IsTerminal;
+    let name = r.source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let dir = work.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("lean11-work")).join("downloads");
+    // downloaded here before
+    if !name.is_empty() && dir.join(&name).is_file() {
+        eprintln!("The recipe's ISO {} is missing; using {}.", r.source.display(), dir.join(&name).display());
+        return Ok(dir.join(&name));
+    }
+    let Some((lang, arch)) = lean11_msdl::media_from_file_name(&name) else {
+        anyhow::bail!("the recipe's ISO {} is missing; give the ISO to use: lean11 build <ISO> --recipe <file>", r.source.display());
+    };
+    let hint = format!("lean11 download --lang {lang} --arch {}, then lean11 build <ISO> --recipe <file>", arch.name());
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!("the recipe's ISO {} is missing ({hint})", r.source.display());
+    }
+    eprint!("The recipe's ISO {} is missing. Download Windows 11 {lang} {} from Microsoft (the latest version)? [Y/n] ", r.source.display(), arch.name());
+    let mut s = String::new();
+    std::io::stdin().read_line(&mut s)?;
+    if matches!(s.trim().to_lowercase().as_str(), "n" | "no" | "nein") {
+        anyhow::bail!("cancelled ({hint})");
+    }
+    std::fs::create_dir_all(&dir)?;
+    let media = Catalog::open(arch)?.resolve(&lang, true)?;
+    eprintln!("{} ({}, {:?})", media.description, media.language, media.arch);
+    fetch_path(media, dir)
+}
+
+/// The USB stick of `build --usb`, chosen and confirmed before the build starts.
+fn usb_target(a: &BuildArgs) -> Result<Option<lean11_usb::Target>> {
+    if a.usb_only && a.usb.is_none() {
+        anyhow::bail!("--usb-only needs --usb [DEVICE]");
+    }
+    let Some(dev) = &a.usb else { return Ok(None) };
+    // tests: write a disk image file instead of a drive (no root, no drive needed)
+    if let Some(img) = std::env::var_os("LEAN11_TEST_USB_IMAGE") {
+        return Ok(Some(lean11_usb::Target::Image(img.into())));
+    }
+    let d = usb::choose_device(Some(dev.as_str()).filter(|s| !s.is_empty()))?;
+    if !a.yes && !usb::confirm_erase(&d)? {
+        anyhow::bail!("cancelled, nothing was built");
+    }
+    Ok(Some(lean11_usb::Target::of(&d)))
+}
+
+fn usb_writer<'a>(t: lean11_usb::Target) -> lean11_core::build::UsbWriter<'a> {
+    Box::new(move |media: &std::path::Path, log: &mut dyn FnMut(&str)| usb::write_media_log(media, t.clone(), true, media.parent(), log))
+}
+
+/// Prints the result; after an ISO build on a terminal offers to write it to a USB stick.
+fn finish_build(a: &BuildArgs, out: &std::path::Path, usb_done: bool) -> Result<()> {
+    use std::io::IsTerminal;
+    if a.usb_only {
+        eprintln!("The USB stick is ready (no ISO was written).");
+        return Ok(());
+    }
     println!("{}", out.display());
+    if usb_done || a.yes || !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+        return Ok(());
+    }
+    eprint!("Write it to a USB stick now? [y/N] ");
+    let mut s = String::new();
+    std::io::stdin().read_line(&mut s)?;
+    if matches!(s.trim().to_lowercase().as_str(), "y" | "yes" | "j" | "ja") {
+        usb::usb_cmd(usb::UsbArgs { source: Some(out.to_path_buf()), ..Default::default() })?;
+    }
     Ok(())
 }
 

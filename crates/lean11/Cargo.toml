@@ -17,6 +17,7 @@ lean11-msdl.workspace = true
 lean11-iso.workspace = true
 lean11-wim.workspace = true
 lean11-hive.workspace = true
+lean11-usb.workspace = true
 ratatui = "0.30"
 unicode-width = "0.2"
 

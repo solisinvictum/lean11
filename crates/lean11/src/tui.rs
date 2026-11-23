@@ -55,6 +55,28 @@ enum Msg {
     Line(String),
     Progress(u64, Option<u64>),
     Done(std::result::Result<PathBuf, String>),
+    /// The build reached "Write USB stick": the UI writes the media folder (outside the full-screen
+    /// view, where sudo can ask for a password) and answers on the channel.
+    Usb(PathBuf, mpsc::Sender<std::result::Result<(), String>>),
+}
+
+/// Writing a USB stick, done by `run_app` with the terminal handed back.
+struct UsbJob {
+    source: PathBuf,
+    target: lean11_usb::Target,
+    work: PathBuf,
+    /// copy the ISO onto this Ventoy data partition instead of erasing the stick
+    ventoy: Option<String>,
+    reply: Option<mpsc::Sender<std::result::Result<(), String>>>,
+}
+
+/// What the drive chooser is for.
+#[derive(Clone, Copy, PartialEq)]
+enum UsbPick {
+    /// the USB output of the build (Settings)
+    Setting,
+    /// writing the finished ISO
+    After,
 }
 
 struct Task {
@@ -160,6 +182,21 @@ struct App {
     message: Option<String>,
     download: Option<Task>,
     build: Option<Task>,
+    /// 0 = ISO file, 1 = USB stick only, 2 = ISO file and USB stick
+    usb_out: u8,
+    usb_dev: Option<lean11_usb::Device>,
+    /// Drive chooser: drives, selection, purpose
+    usb_pick: Option<(Vec<lean11_usb::Device>, ListState, UsbPick)>,
+    /// Erase confirmation for this drive and purpose
+    confirm_usb: Option<(lean11_usb::Device, UsbPick)>,
+    usb_ack: bool,
+    usb_job: Option<UsbJob>,
+    /// Architecture of the ISO download (the PC to install, not this machine)
+    dl_arch: lean11_msdl::Arch,
+    /// A recipe whose ISO is missing: offer to download it (recipe, language, architecture, missing path)
+    confirm_recipe_dl: Option<(Recipe, String, lean11_msdl::Arch, String)>,
+    /// Recipe loaded once its ISO is downloaded
+    recipe_wait: Option<Recipe>,
     quit: bool,
 }
 
@@ -216,6 +253,15 @@ impl App {
             message: None,
             download: None,
             build: None,
+            usb_out: 0,
+            usb_dev: None,
+            usb_pick: None,
+            confirm_usb: None,
+            usb_ack: false,
+            usb_job: None,
+            dl_arch: lean11_msdl::Arch::X64,
+            confirm_recipe_dl: None,
+            recipe_wait: None,
             quit: false,
         };
         a.apply_mode(Mode::Lean);
@@ -233,7 +279,9 @@ impl App {
     }
 
     fn recipe(&self) -> Recipe {
-        self.recipe_with(true)
+        let mut r = self.recipe_with(true);
+        r.no_iso = self.usb_out == 1;
+        r
     }
 
     /// `read_key = false` skips reading the SSH key file (privacy status checks run on every frame and do
@@ -582,6 +630,7 @@ impl App {
     fn start_download(&mut self) {
         let (tx, rx) = mpsc::channel();
         let lang = self.language.clone();
+        let arch = self.dl_arch;
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let flag = cancel.clone();
         // downloads go into the workspace's downloads directory
@@ -594,7 +643,7 @@ impl App {
                 let media = if lang.trim().starts_with("https://") {
                     lean11_msdl::manual(lang.trim(), None)?
                 } else {
-                    lean11_msdl::Catalog::open(lean11_msdl::Arch::host())?.resolve(&lang, true)?
+                    lean11_msdl::Catalog::open(arch)?.resolve(&lang, true)?
                 };
                 tx.send(Msg::Line(format!("{} ({})", media.description, media.language))).ok();
                 let dest = folder.join(&media.file_name);
@@ -623,8 +672,36 @@ impl App {
         }
     }
 
+    /// Asks before erasing the USB stick, then builds.
+    fn begin_build(&mut self) {
+        if self.usb_out > 0 {
+            match &self.usb_dev {
+                None => {
+                    self.message = Some("Choose the USB stick in Settings (or set Output to ISO file).".into());
+                    self.step = Step::Settings;
+                    return;
+                }
+                Some(d) if !self.usb_ack => {
+                    self.confirm_usb = Some((d.clone(), UsbPick::Setting));
+                    return;
+                }
+                _ => {}
+            }
+        }
+        self.start_build();
+    }
+
+    fn open_usb_pick(&mut self, purpose: UsbPick) {
+        match lean11_usb::devices::list() {
+            Ok(list) if list.is_empty() => self.message = Some("No USB or removable drive found. Plug in a stick and try again.".into()),
+            Ok(list) => self.usb_pick = Some((list, ListState::default().with_selected(Some(0)), purpose)),
+            Err(e) => self.message = Some(format!("Cannot list the drives: {e:#}")),
+        }
+    }
+
     fn start_build(&mut self) {
         let recipe = self.recipe();
+        let want_usb = self.usb_out > 0;
         let work = self.work_dir();
         let (tx, rx) = mpsc::channel();
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -634,14 +711,36 @@ impl App {
             let mut sink = move |m: &str| {
                 tx2.send(Msg::Line(m.to_string())).ok();
             };
+            let usb_tx = tx.clone();
             let r = Builder::new(&work, recipe, &mut sink).and_then(|mut b| {
                 b.cancel = Some(flag);
+                if want_usb {
+                    b.set_usb(Box::new(move |media: &std::path::Path, log: &mut dyn FnMut(&str)| {
+                        log("Writing the USB stick: lean11 leaves the full-screen view for a moment (administrator rights)…");
+                        let (rtx, rrx) = mpsc::channel();
+                        usb_tx.send(Msg::Usb(media.to_path_buf(), rtx)).ok();
+                        match rrx.recv() {
+                            Ok(Ok(())) => {
+                                log("USB stick written and checked.");
+                                Ok(())
+                            }
+                            Ok(Err(e)) => anyhow::bail!("writing the USB stick failed: {e}"),
+                            Err(_) => anyhow::bail!("writing the USB stick was interrupted"),
+                        }
+                    }));
+                }
                 b.run()
             });
             tx.send(Msg::Done(r.map_err(|e| format!("{e:#}")))).ok();
         });
         self.build = Some(Task { rx, cancel: Some(cancel), lines: Vec::new(), progress: None, result: None });
         self.step = Step::Build;
+    }
+
+    /// Writes the finished ISO to `d` (or copies it onto its Ventoy partition).
+    fn write_iso_to(&mut self, d: lean11_usb::Device, ventoy: Option<String>) {
+        let Some(Some(Ok(iso))) = self.build.as_ref().map(|b| b.result.clone()) else { return };
+        self.usb_job = Some(UsbJob { source: iso, target: lean11_usb::Target::of(&d), work: self.work_dir(), ventoy, reply: None });
     }
 
     fn poll(&mut self) {
@@ -680,6 +779,14 @@ impl App {
                     Msg::Line(l) => t.lines.push(l),
                     Msg::Progress(d, total) => t.progress = Some((d, total)),
                     Msg::Done(r) => t.result = Some(r),
+                    Msg::Usb(media, reply) => {
+                        if let Some(d) = &self.usb_dev {
+                            let work = media.parent().map(PathBuf::from).unwrap_or_else(|| media.clone());
+                            self.usb_job = Some(UsbJob { source: media, target: lean11_usb::Target::of(d), work, ventoy: None, reply: Some(reply) });
+                        } else {
+                            reply.send(Err("no USB stick chosen".into())).ok();
+                        }
+                    }
                 }
             }
         }
@@ -690,11 +797,22 @@ impl App {
                 Ok(p) => {
                     self.source = p.display().to_string();
                     self.message = Some(format!("Downloaded {}", self.source));
+                    if let Some(mut r) = self.recipe_wait.take() {
+                        r.source = p.clone();
+                        self.message = Some(match self.apply_recipe(r) {
+                            Ok(()) => format!("Downloaded {}; the recipe is loaded with it", self.source),
+                            Err(e) => format!("Downloaded {}, but the recipe cannot be loaded: {e:#}", self.source),
+                        });
+                    }
                 }
                 Err(e) if e.contains("download cancelled") => {
+                    self.recipe_wait = None;
                     self.message = Some("Download cancelled; the partial file is kept and resumes on the next download.".into())
                 }
-                Err(e) => self.message = Some(format!("Download failed: {e}")),
+                Err(e) => {
+                    self.recipe_wait = None;
+                    self.message = Some(format!("Download failed: {e}"))
+                }
             }
             self.download = None;
         }
@@ -703,7 +821,13 @@ impl App {
     fn settings_rows(&self) -> Vec<(String, String)> {
         let yn = |b: bool| if b { "yes" } else { "no" }.to_string();
         vec![
-            ("Output ISO".into(), self.output.clone()),
+            ("Output".into(), ["ISO file", "USB stick only (no ISO)", "ISO file and USB stick"][self.usb_out as usize].into()),
+            ("USB stick".into(), match (&self.usb_dev, self.usb_out) {
+                (_, 0) => "(not used)".into(),
+                (Some(d), _) => d.title(),
+                (None, _) => "(press space to choose)".into(),
+            }),
+            ("Output ISO".into(), if self.usb_out == 1 { "(none)".into() } else { self.output.clone() }),
             ("Working directory".into(), if self.work.is_empty() { "(next to the output)".into() } else { self.work.clone() }),
             ("Turbo mode".into(), yn(self.turbo)),
             ("Compression".into(), match self.compression {
@@ -731,7 +855,14 @@ impl App {
     fn commit_field(&mut self, field: Field, text: String) {
         // typed paths may start with ~ like in a shell
         let text = match field {
-            Field::Source | Field::Output | Field::Work | Field::SshKey | Field::SaveTemplate | Field::LoadTemplate => expand_home(&text),
+            Field::Source
+            | Field::Output
+            | Field::Work
+            | Field::SshKey
+            | Field::SaveTemplate
+            | Field::LoadTemplate
+            | Field::SaveRecipe
+            | Field::LoadRecipe => expand_home(&text),
             _ => text,
         };
         match field {
@@ -799,10 +930,28 @@ impl App {
                 });
             }
             Field::LoadRecipe => {
-                let r = std::fs::read(&text)
-                    .map_err(anyhow::Error::from)
-                    .and_then(|b| Ok(serde_json::from_slice::<Recipe>(&b)?))
-                    .and_then(|r| self.apply_recipe(r));
+                let r = std::fs::read(&text).map_err(anyhow::Error::from).and_then(|b| Ok(serde_json::from_slice::<Recipe>(&b)?));
+                // the ISO the recipe names is not here (e.g. a recipe from another machine): offer the download
+                if let Ok(rec) = &r
+                    && !rec.source.exists()
+                {
+                    let name = rec.source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    // downloaded into this workspace before: use that copy
+                    let here = self.work_dir().join("downloads").join(&name);
+                    if !name.is_empty() && here.is_file() {
+                        let mut rec = rec.clone();
+                        rec.source = here.clone();
+                        self.message = Some(match self.apply_recipe(rec) {
+                            Ok(()) => format!("Recipe loaded from {text}, with {} (the recipe's ISO is not here)", here.display()),
+                            Err(e) => format!("Cannot load the recipe: {e:#}"),
+                        });
+                        return;
+                    }
+                    let (lang, arch) = lean11_msdl::media_from_file_name(&name).unwrap_or((self.language.clone(), self.dl_arch));
+                    self.confirm_recipe_dl = Some((rec.clone(), lang, arch, rec.source.display().to_string()));
+                    return;
+                }
+                let r = r.and_then(|r| self.apply_recipe(r));
                 self.message = Some(match r {
                     Ok(()) => format!("Recipe loaded from {text}"),
                     Err(e) => format!("Cannot load the recipe: {e:#}"),
@@ -874,11 +1023,84 @@ impl App {
             self.editing = Some((field, text));
             return;
         }
+        if let Some((list, st, purpose)) = &mut self.usb_pick {
+            match code {
+                KeyCode::Up => st.select_previous(),
+                KeyCode::Down => st.select_next(),
+                KeyCode::Esc | KeyCode::Char('q') => self.usb_pick = None,
+                KeyCode::Char('r') => {
+                    let p = *purpose;
+                    self.usb_pick = None;
+                    self.open_usb_pick(p);
+                }
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    let d = st.selected().and_then(|i| list.get(i)).cloned();
+                    let p = *purpose;
+                    self.usb_pick = None;
+                    if let Some(d) = d {
+                        if p == UsbPick::Setting {
+                            self.usb_dev = Some(d);
+                            self.usb_ack = false;
+                        } else {
+                            self.confirm_usb = Some((d, p));
+                        }
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        if let Some((r, lang, arch, _)) = self.confirm_recipe_dl.clone() {
+            match code {
+                KeyCode::Char('y') => {
+                    self.confirm_recipe_dl = None;
+                    self.language = lang;
+                    self.dl_arch = arch;
+                    self.recipe_wait = Some(r);
+                    self.step = Step::Source;
+                    self.start_download();
+                }
+                KeyCode::Char('a') => {
+                    let other = if arch == lean11_msdl::Arch::X64 { lean11_msdl::Arch::Arm64 } else { lean11_msdl::Arch::X64 };
+                    if let Some(c) = &mut self.confirm_recipe_dl {
+                        c.2 = other;
+                    }
+                }
+                KeyCode::Char('n') | KeyCode::Esc => {
+                    self.confirm_recipe_dl = None;
+                    self.message = Some("Recipe not loaded. t loads it as a template: the whole choice without the ISO.".into());
+                }
+                _ => {}
+            }
+            return;
+        }
+        if let Some((d, purpose)) = self.confirm_usb.clone() {
+            let ventoy = d.ventoy_writable().map(str::to_string).filter(|_| purpose == UsbPick::After);
+            match code {
+                KeyCode::Char('y') => {
+                    self.confirm_usb = None;
+                    match purpose {
+                        UsbPick::Setting => {
+                            self.usb_ack = true;
+                            self.start_build();
+                        }
+                        UsbPick::After => self.write_iso_to(d, None),
+                    }
+                }
+                KeyCode::Char('c') if ventoy.is_some() => {
+                    self.confirm_usb = None;
+                    self.write_iso_to(d, ventoy);
+                }
+                KeyCode::Char('n') | KeyCode::Esc => self.confirm_usb = None,
+                _ => {}
+            }
+            return;
+        }
         if self.confirm_breaking {
             if code == KeyCode::Char('y') {
                 self.breaking_ack = true;
                 self.confirm_breaking = false;
-                self.start_build();
+                self.begin_build();
             } else if matches!(code, KeyCode::Char('n') | KeyCode::Esc) {
                 self.confirm_breaking = false;
             }
@@ -964,6 +1186,9 @@ impl App {
                 KeyCode::Char('b') | KeyCode::Char('e') => self.browse(Field::Source),
                 KeyCode::Char('t') | KeyCode::Char('i') => self.editing = Some((Field::Source, self.source.clone())),
                 KeyCode::Char('d') if self.download.is_none() => self.editing = Some((Field::Language, self.language.clone())),
+                KeyCode::Char('a') if self.download.is_none() => {
+                    self.dl_arch = if self.dl_arch == lean11_msdl::Arch::X64 { lean11_msdl::Arch::Arm64 } else { lean11_msdl::Arch::X64 }
+                }
                 KeyCode::Char('x') if self.download.is_some() => {
                     if let Some(c) = self.download.as_ref().and_then(|t| t.cancel.as_ref()) {
                         c.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1081,23 +1306,28 @@ impl App {
                 KeyCode::Up => self.set_state.select_previous(),
                 KeyCode::Down => self.set_state.select_next(),
                 KeyCode::Char(' ') | KeyCode::Char('e') => match self.set_state.selected().unwrap_or(0) {
-                    0 => self.browse(Field::Output),
-                    1 => self.browse(Field::Work),
-                    2 => self.turbo = !self.turbo,
-                    3 => {
+                    0 => {
+                        self.usb_out = (self.usb_out + 1) % 3;
+                        self.usb_ack = false;
+                    }
+                    1 if self.usb_out > 0 => self.open_usb_pick(UsbPick::Setting),
+                    2 if self.usb_out != 1 => self.browse(Field::Output),
+                    3 => self.browse(Field::Work),
+                    4 => self.turbo = !self.turbo,
+                    5 => {
                         self.compression = match self.compression {
                             Compression::Recovery => Compression::Maximum,
                             Compression::Maximum => Compression::Fast,
                             _ => Compression::Recovery,
                         }
                     }
-                    4 => self.local_account = !self.local_account,
-                    5 => self.compact = !self.compact,
-                    6 => self.no_prompt = !self.no_prompt,
-                    7 => self.omit_sxs = !self.omit_sxs,
-                    8 => self.remove_redundant_data = !self.remove_redundant_data,
-                    9 => self.keep_work = !self.keep_work,
-                    10 if self.mode == Mode::Custom => self.browse(Field::SshKey),
+                    6 => self.local_account = !self.local_account,
+                    7 => self.compact = !self.compact,
+                    8 => self.no_prompt = !self.no_prompt,
+                    9 => self.omit_sxs = !self.omit_sxs,
+                    10 => self.remove_redundant_data = !self.remove_redundant_data,
+                    11 => self.keep_work = !self.keep_work,
+                    12 if self.mode == Mode::Custom => self.browse(Field::SshKey),
                     _ => {}
                 },
                 KeyCode::Enter | KeyCode::Right => self.step = Step::Review,
@@ -1111,20 +1341,23 @@ impl App {
                 if matches!(code, KeyCode::Enter | KeyCode::Char('b')) {
                     if lean11_core::build::lacks_privileges() {
                         self.message = Some("With LEAN11_WIMLIB=1 building needs root: start the wizard with sudo.".into());
-                    } else if PathBuf::from(&self.output).exists() {
+                    } else if self.usb_out != 1 && PathBuf::from(&self.output).exists() {
                         self.message = Some(format!("{} exists; choose another output name in Settings.", self.output));
                     } else if !self.breaking_ack
                         && !lean11_core::knowledge::breaking_choices(&self.recipe(), (!self.inv.is_empty()).then_some(self.inv.as_slice())).is_empty()
                     {
                         self.confirm_breaking = true;
                     } else {
-                        self.start_build();
+                        self.begin_build();
                     }
                 }
             }
             Step::Build => {
                 let running = self.build.as_ref().is_some_and(|b| b.result.is_none());
-                if !running && matches!(code, KeyCode::Char('q') | KeyCode::Enter | KeyCode::Esc) {
+                let iso_done = self.build.as_ref().is_some_and(|b| matches!(b.result, Some(Ok(_)))) && self.usb_out == 0;
+                if iso_done && code == KeyCode::Char('u') {
+                    self.open_usb_pick(UsbPick::After);
+                } else if !running && matches!(code, KeyCode::Char('q') | KeyCode::Enter | KeyCode::Esc) {
                     self.quit = true;
                 } else if running && code == KeyCode::Char('s') {
                     if let Some(c) = self.build.as_ref().and_then(|b| b.cancel.as_ref()) {
@@ -1175,6 +1408,15 @@ fn render(f: &mut Frame, app: &mut App) {
                 Line::from(format!("  {}", if app.source.is_empty() { "(none)" } else { &app.source })).cyan(),
                 Line::raw(""),
                 Line::raw("b: browse for the ISO    t: type a path    d: download the latest ISO from Microsoft    Enter: continue"),
+                Line::raw(""),
+                Line::from(vec![
+                    "Download for: ".into(),
+                    match app.dl_arch {
+                        lean11_msdl::Arch::X64 => "x64 (Intel/AMD PCs)".bold(),
+                        lean11_msdl::Arch::Arm64 => "arm64 (ARM PCs, e.g. Snapdragon)".bold(),
+                    },
+                    "    a: switch".dark_gray(),
+                ]),
             ];
             if let Some(d) = &app.download {
                 lines.push(Line::raw(""));
@@ -1471,7 +1713,16 @@ fn render(f: &mut Frame, app: &mut App) {
                 Line::from(vec!["Mode:        ".into(), mode_name(app.mode).bold()]),
                 Line::from(format!("Source:      {}", app.source)),
                 Line::from(format!("Edition:     {ed}")),
-                Line::from(format!("Output:      {}", app.output)),
+                Line::from(format!(
+                    "Output:      {}",
+                    match (app.usb_out, &app.usb_dev) {
+                        (0, _) => app.output.clone(),
+                        (1, Some(d)) => format!("USB stick {}", d.title()),
+                        (_, Some(d)) => format!("{} and USB stick {}", app.output, d.title()),
+                        (1, None) => "USB stick (not chosen yet)".into(),
+                        (_, None) => format!("{} and USB stick (not chosen yet)", app.output),
+                    }
+                )),
                 Line::from(format!("Compression: {:?}", r.compression)),
             ];
             if let Some(k) = &r.ssh_authorized_key {
@@ -1559,6 +1810,7 @@ fn render(f: &mut Frame, app: &mut App) {
                 .unwrap_or_default();
             let title = match t.and_then(|t| t.result.as_ref()) {
                 None => Line::raw(" Building… "),
+                Some(Ok(_)) if app.usb_out == 1 => Line::styled(" Done: USB stick written (q to quit) ", rating_style(Some(Rating::Safe)).add_modifier(Modifier::BOLD)),
                 Some(Ok(p)) => Line::styled(format!(" Done: {} (q to quit) ", p.display()), rating_style(Some(Rating::Safe)).add_modifier(Modifier::BOLD)),
                 Some(Err(_)) => Line::styled(" Failed (q to quit) ", rating_style(Some(Rating::Breaks)).add_modifier(Modifier::BOLD)),
             };
@@ -1572,12 +1824,13 @@ fn render(f: &mut Frame, app: &mut App) {
     let help = match app.step {
         Step::Mode => "↑↓ choose   Enter next   r load recipe   t load template   q quit",
         Step::Review => "Enter build   s save recipe   x save template   t load template   Esc back   q quit",
-        Step::Source => "b browse   t type   d download (x cancels)   Enter next   Esc back",
+        Step::Source => "b browse   t type   d download (x cancels)   a x64/arm64   Enter next   Esc back",
         Step::Components => "↑↓ move   Space toggle   t/x load/save template   Enter next   Esc back",
         Step::Privacy => "↑↓ move   Space toggle   r recommended   s strict   n none   / filter   t/x template   Enter next   Esc back",
         Step::Custom => "l reload   Tab kind   / filter   Space remove/disable/none   Enter next   Esc back",
         Step::Software => "↑↓ move   Space toggle   t/x load/save template   Enter next   Esc back",
         Step::Settings => "↑↓ move   Space change/edit   t/x load/save template   Enter next   Esc back",
+        Step::Build if app.usb_out == 0 && app.build.as_ref().is_some_and(|b| matches!(b.result, Some(Ok(_)))) => "u write the ISO to a USB stick   q quit",
         Step::Build if app.build.as_ref().is_some_and(|b| b.result.is_some()) => "q quit",
         Step::Build => "s stop after the current stage (resumable)",
         _ => "↑↓ move   Enter next   Esc back   q quit",
@@ -1603,6 +1856,43 @@ fn render(f: &mut Frame, app: &mut App) {
             "Core removes the component store and Windows recovery and disables Windows Update and Defender. \
              The result cannot be updated, serviced or repaired, and features cannot be added later. \
              Use it only for test VMs.\n\nPress y to accept, n to go back.",
+        );
+    }
+    if let Some((list, st, _)) = &mut app.usb_pick {
+        let a = f.area();
+        let w = a.width.saturating_sub(8).min(90);
+        let h = (list.len() as u16 + 4).min(a.height.saturating_sub(4)).max(5);
+        let r = Rect::new(a.x + (a.width - w) / 2, a.y + (a.height - h) / 2, w, h);
+        let items: Vec<ListItem> = list
+            .iter()
+            .map(|d| ListItem::new(format!("{}{}", d.title(), if d.ventoy_mount().is_some() { "  (Ventoy)" } else { "" })))
+            .collect();
+        f.render_widget(Clear, r);
+        f.render_stateful_widget(
+            List::new(items).highlight_style(Style::new().reversed()).highlight_symbol("▶ ").block(Block::bordered().title(" USB stick (Enter choose, r refresh, Esc back) ").yellow()),
+            r,
+            st,
+        );
+    }
+    if let Some((d, purpose)) = &app.confirm_usb {
+        let ventoy = d.ventoy_writable().is_some() && *purpose == UsbPick::After;
+        let parts = d.part_lines();
+        let mut text = format!("ALL DATA on {} will be erased:\n\n  {}\n\n", d.title(), if parts.is_empty() { "(no partitions)".to_string() } else { parts.join("\n  ") });
+        if ventoy {
+            text += "This is a Ventoy stick: press c to copy the ISO onto it and keep everything, y to erase it, n to go back.";
+        } else {
+            text += "Press y to erase it and write the installation media, n to go back.";
+        }
+        popup(f, "Erase USB stick?", &text);
+    }
+    if let Some((_, lang, arch, path)) = &app.confirm_recipe_dl {
+        popup(
+            f,
+            "ISO of the recipe not found",
+            &format!(
+                "The recipe names an ISO that is not here:\n\n  {path}\n\nDownload Windows 11 {lang} {} from Microsoft (the latest version, it may be newer) and load the recipe with it?\n\ny download   a switch x64/arm64   n cancel",
+                arch.name()
+            ),
         );
     }
     if app.confirm_breaking {
@@ -1752,6 +2042,29 @@ fn popup(f: &mut Frame, title: &str, text: &str) {
 fn run_app(terminal: &mut DefaultTerminal, mut app: App) -> Result<()> {
     while !app.quit {
         app.poll();
+        if let Some(job) = app.usb_job.take() {
+            // the terminal goes back to normal: sudo/pkexec/UAC can ask, the progress is visible
+            ratatui::restore();
+            eprintln!("\n== Write USB stick: {}", job.target.describe());
+            let r = match &job.ventoy {
+                Some(m) => crate::usb::copy_to_ventoy(&job.source, m).map(|p| eprintln!("Copied to {}.", p.display())),
+                None => crate::usb::write_media(&job.source, job.target.clone(), true, Some(&job.work)),
+            };
+            if let Err(e) = &r {
+                eprintln!("Error: {e:#}");
+            }
+            eprint!("\nPress Enter to return to lean11 ");
+            let mut s = String::new();
+            let _ = std::io::stdin().read_line(&mut s);
+            *terminal = ratatui::init();
+            app.message = Some(match &r {
+                Ok(()) => "The USB stick is ready.".into(),
+                Err(e) => format!("Writing the USB stick failed: {e:#}"),
+            });
+            if let Some(tx) = job.reply {
+                tx.send(r.map_err(|e| format!("{e:#}"))).ok();
+            }
+        }
         terminal.draw(|f| render(f, &mut app))?;
         if event::poll(Duration::from_millis(200))?
             && let Event::Key(k) = event::read()?
