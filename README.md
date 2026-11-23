@@ -12,6 +12,11 @@
 > an eye on the quality and the behavior of the app, and every single feature has been tested by a human (me)
 > before it ships. On top of that, every removable item is rated by real test installs (see
 > [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md)). If something does not work for you, please open an issue.
+>
+> And yes, I know: RUST! RUST IS THE BEST!!!!!1111eleven! Joking aside, it is Rust for purely pragmatic reasons:
+> one code base that runs on Windows, Linux and macOS. I first planned to write it in Python, but it would have
+> grown too big, and porting it to all three major operating systems would have been too much work. So it is Rust
+> from the ground up. Also, nobody wants Java. *scnr*
 
 Build trimmed, private Windows 11 ISOs on Linux, macOS and Windows, without DISM or a VM: remove bundled apps
 and features, apply a verified catalog of privacy settings, add custom removals from the image's full inventory,
