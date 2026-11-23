@@ -5,6 +5,8 @@
 # winget: package ids, first match wins; `{lang}` is replaced by the image language (de-DE, then de).
 # extra_args: arguments added to the winget manifest's silent switches.
 # kind = "scoop": not a winget package; installed per user at sign-in (needs internet then).
+# kind = "github": not in winget; the installer is the file matching `asset` (one `*`) in the latest stable
+#   release of `github` (owner/name), checked against the SHA-256 GitHub records for it; `args` = silent switches.
 
 [[program]]
 id = "chrome"
@@ -104,3 +106,13 @@ name = "Scoop"
 category = "Package managers"
 kind = "scoop"
 description = "Command line package manager that installs programs into the user profile without admin rights (`scoop install ...`). Set up for each account at its first sign-in; needs internet then (retried at every sign-in until it succeeds)."
+
+[[program]]
+id = "vibepollo"
+name = "Vibepollo"
+category = "Streaming"
+kind = "github"
+github = "Nonary/Vibepollo"
+asset = "VibepolloSetup-*.exe"
+args = "/qn /norestart"
+description = "Game streaming host for Moonlight clients (fork of Sunshine and Apollo) with its own virtual display and gamepad drivers: streams in the client's native resolution, also from hybrid-GPU laptops. Set it up in its web interface (https://localhost:47990) after the first sign-in."

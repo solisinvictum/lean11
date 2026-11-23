@@ -65,6 +65,39 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// The keys of an `authorized_keys`-style text (a `.pub` file or several keys): one per line, empty lines
+/// and `#` comments skipped, the same key (type and blob, whatever the comment) only once. `None` when a line
+/// is not a valid key or there is none.
+pub fn authorized_keys(text: &str) -> Option<Vec<String>> {
+    let id = |l: &str| l.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+    let mut keys: Vec<String> = Vec::new();
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+        if !valid_authorized_key(line) {
+            return None;
+        }
+        if !keys.iter().any(|k| id(k) == id(line)) {
+            keys.push(line.to_string());
+        }
+    }
+    (!keys.is_empty()).then_some(keys)
+}
+
+/// Short form of each key for display: type and comment (or the end of the blob).
+pub fn key_summary(text: &str) -> String {
+    authorized_keys(text)
+        .unwrap_or_default()
+        .iter()
+        .map(|k| {
+            let mut p = k.split_whitespace();
+            let kind = p.next().unwrap_or("");
+            let blob = p.next().unwrap_or("");
+            let comment = p.collect::<Vec<_>>().join(" ");
+            if comment.is_empty() { format!("{kind} …{}", &blob[blob.len().saturating_sub(8)..]) } else { format!("{kind} {comment}") }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Accepts one OpenSSH public key line (`.pub` format: type, base64 blob, optional comment) whose
 /// blob is valid base64 and starts with the same algorithm name.
 pub fn valid_authorized_key(key: &str) -> bool {
@@ -87,6 +120,11 @@ pub fn valid_authorized_key(key: &str) -> bool {
 
 /// `SetupComplete.cmd` line; it is put before an existing script's commands (which may `exit`).
 pub const SETUPCOMPLETE_LINE: &str = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%SystemRoot%\\Setup\\Files\\lean11-ssh-setup.ps1\" >\"%SystemRoot%\\Temp\\lean11-ssh-setup.log\" 2>&1\r\n";
+
+/// FirstLogonCommands fallback: Windows skips `SetupComplete.cmd` when setup uses an OEM product key (most
+/// laptops and branded PCs carry one in the firmware); the first sign-in (an administrator, elevated) runs
+/// the setup then. The script does nothing when SetupComplete already ran it.
+pub const FIRST_LOGON_COMMAND: &str = r#"cmd.exe /c powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SystemRoot%\Setup\Files\lean11-ssh-setup.ps1" >"%SystemRoot%\Temp\lean11-ssh-setup-logon.log" 2>&1"#;
 
 /// Combines our line with an existing `SetupComplete.cmd` (ours first; idempotent).
 pub fn setupcomplete(existing: Option<&str>) -> String {
@@ -148,11 +186,13 @@ function Invoke-AsSystem {
 Export-ModuleMember -Function Invoke-AsSystem
 "#;
 
-/// The offline setup script run by `SetupComplete.cmd` as SYSTEM.
+/// The setup script, run by `SetupComplete.cmd` as SYSTEM or else at the first sign-in.
 pub fn setup_script() -> String {
     r#"$ErrorActionPreference = 'Stop'
-Write-Output "lean11 SSH setup $(Get-Date -Format o)"
+Write-Output "lean11 SSH setup $(Get-Date -Format o) ($env:USERNAME)"
 $files = "$env:SystemRoot\Setup\Files"
+$doneMarker = "$files\lean11-ssh.done"
+if (Test-Path $doneMarker) { Write-Output "lean11 SSH setup: already done"; exit 0 }
 try {
     # 1. Install the OpenSSH server (and client) offline.
     $log = "$env:SystemRoot\Temp\lean11-openssh-msi.log"
@@ -181,7 +221,7 @@ try {
     }
     Set-Content $cfg $t -Encoding ascii
 
-    # 3. The authorized key for administrators, readable only by Administrators and SYSTEM.
+    # 3. The authorized keys for administrators, readable only by Administrators and SYSTEM.
     $ak = Join-Path $sshData 'administrators_authorized_keys'
     Copy-Item "$files\lean11_authorized_key.pub" $ak -Force
     & icacls.exe $ak /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F' | Out-Null
@@ -228,6 +268,7 @@ try {
     Set-Service ssh-agent -StartupType Automatic
     Start-Service sshd
     if ((Get-Service sshd).Status -ne 'Running') { throw "sshd did not start" }
+    New-Item -ItemType File -Force $doneMarker | Out-Null
     Write-Output "lean11 SSH setup done"
 } catch {
     Write-Output "lean11 SSH setup FAILED: $_"
@@ -253,6 +294,26 @@ mod tests {
         assert!(!valid_authorized_key("not a key"));
         assert!(!valid_authorized_key(&format!("{ED}\nssh-ed25519 AAAA")));
         assert!(!valid_authorized_key(""));
+    }
+
+    #[test]
+    fn several_keys() {
+        let two = format!("# my keys\r\n{ED}\r\n\r\nssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFN1MEegmhiPOtd2fmS+PA6F76Y0TA2Hnj6py7rRQMKb other\n{ED}\n");
+        let k = authorized_keys(&two).unwrap();
+        assert_eq!(k.len(), 2, "duplicate dropped, comment and empty line skipped");
+        assert_eq!(key_summary(&two), "ssh-ed25519 user@host, ssh-ed25519 other");
+        assert!(authorized_keys(&format!("{ED}\nnot a key")).is_none());
+        assert!(authorized_keys("# only a comment\n").is_none());
+        assert_eq!(authorized_keys(ED).unwrap(), vec![ED.to_string()]);
+        let renamed = ED.replace("user@host", "other comment");
+        assert_eq!(authorized_keys(&format!("{ED}\n{renamed}")).unwrap().len(), 1, "same key, other comment");
+    }
+
+    #[test]
+    fn first_logon_fallback() {
+        assert!(FIRST_LOGON_COMMAND.contains("lean11-ssh-setup.ps1"));
+        let s = setup_script();
+        assert!(s.contains("lean11-ssh.done") && s.find("Test-Path $doneMarker").unwrap() < s.find("OpenSSH.msi").unwrap());
     }
 
     #[test]

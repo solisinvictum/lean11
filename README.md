@@ -112,7 +112,10 @@ lean11 inventory Win11.iso --kind feature    # full image inventory (apps, featu
 With `--ssh-key` (Custom) the installed Windows runs an OpenSSH server on port 22 right after setup: log in with
 `ssh Administrator@<host>` and the key; the session is a fully elevated administrator with PowerShell, and
 `Invoke-AsSystem '<command>'` runs a command as SYSTEM (for files and keys owned by TrustedInstaller). Microsoft
-Defender still scans what you run unless you add `--enable disable-defender`.
+Defender still scans what you run unless you add `--enable disable-defender`. Several machines can log in:
+repeat `--ssh-key`, or give a file with one key per line like `authorized_keys` (in the TUI as well). The server is
+set up at the end of setup, or at the first sign-in on PCs with an OEM product key in the firmware (Windows skips
+the end-of-setup script there).
 
 Core's four parts are also single Custom options: `disable-defender` and `disable-windows-update` are reversible
 and keep the image serviceable; `remove-winre` and `trim-winsxs` are irreversible and need `--accept-core`
@@ -156,9 +159,11 @@ The ratings live in `crates/lean11-core/data/knowledge.toml`; format: [docs/KNOW
 ### Additional software
 
 Programs can be added to the image and are installed silently and machine-wide at the end of setup: Google Chrome,
-Firefox, LibreWolf, Opera, Brave, Vivaldi, Thunderbird, Betterbird, VLC, IrfanView, GIMP, UniGetUI, Chocolatey
-and Scoop. The build takes the latest version from the winget catalog (the same source Windows' `winget` uses),
-downloads the installer from the vendor and checks its SHA-256; setup checks it again before running it. Firefox,
+Firefox, LibreWolf, Opera, Brave, Vivaldi, Thunderbird, Betterbird, VLC, IrfanView, GIMP, UniGetUI, Chocolatey,
+Scoop and Vibepollo. The build takes the latest version from the winget catalog (the same source Windows' `winget`
+uses), downloads the installer from the vendor and checks its SHA-256; setup checks it again before running it.
+Vibepollo is not in winget: it comes from its latest stable GitHub release, checked against the SHA-256 GitHub
+records for the file. Firefox,
 Thunderbird and Betterbird come in the image language where available. Scoop installs per account: it is set up
 at sign-in and needs internet then (retried at every sign-in until it succeeds). The result is logged to
 `C:\Windows\Logs\lean11-software.log`.

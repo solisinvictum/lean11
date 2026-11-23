@@ -407,7 +407,7 @@ pub fn download(ins: &Installer, log: &mut dyn FnMut(&str)) -> Result<PathBuf> {
         }
         let got = hex::encode(hash.finalize());
         if got != ins.sha256 {
-            bail!("{} {}: the download has SHA-256 {got}, the winget manifest names {} ({})", ins.name, ins.version, ins.sha256, ins.url);
+            bail!("{} {}: the download has SHA-256 {got}, the publisher names {} ({})", ins.name, ins.version, ins.sha256, ins.url);
         }
         f.sync_all().with_context(|| format!("cannot sync {}", tmp.display()))?;
         drop(f);

@@ -32,7 +32,7 @@ pub struct Recipe {
     pub compression: Compression,
     pub local_account: bool,
     pub compact: bool,
-    /// Add an OpenSSH server and this authorized key (built-in Administrator).
+    /// Add an OpenSSH server and these authorized keys (built-in Administrator); one key per line.
     #[serde(default)]
     pub ssh_authorized_key: Option<String>,
     pub output: PathBuf,
@@ -151,8 +151,8 @@ impl Recipe {
             bail!("Custom removals require acknowledgement of the risk of an unbootable image.");
         }
         if let Some(k) = &self.ssh_authorized_key {
-            if !ssh::valid_authorized_key(k) {
-                bail!("The SSH key is not a valid OpenSSH public key (expected e.g. 'ssh-ed25519 AAAA... comment').");
+            if ssh::authorized_keys(k).is_none() {
+                bail!("The SSH key is not a valid OpenSSH public key (expected one key per line, e.g. 'ssh-ed25519 AAAA... comment').");
             }
         }
         let mut seen = std::collections::HashSet::new();
@@ -1152,7 +1152,9 @@ impl<'a> Builder<'a> {
         let files = lean11_wim::resolve_ci(&setup, "Files").unwrap_or_else(|| setup.join("Files"));
         fs::create_dir_all(&files)?;
         fs::copy(&msi, files.join("OpenSSH.msi")).with_context(|| "cannot stage OpenSSH.msi")?;
-        fs::write(files.join("lean11_authorized_key.pub"), format!("{}\r\n", key.trim()))?;
+        let keys = ssh::authorized_keys(&key).ok_or_else(|| anyhow!("the SSH key is not a valid OpenSSH public key"))?;
+        self.log(&format!("authorized keys: {}", ssh::key_summary(&key)));
+        fs::write(files.join("lean11_authorized_key.pub"), keys.iter().map(|k| format!("{k}\r\n")).collect::<String>())?;
         fs::write(files.join("lean11-ssh-setup.ps1"), ssh::setup_script())?;
         fs::write(files.join("lean11.psm1"), ssh::MODULE_PSM1)?;
         add_setupcomplete(root, ssh::SETUPCOMPLETE_LINE)?;
@@ -1530,7 +1532,9 @@ impl<'a> Builder<'a> {
                 .any(|s| s.ops.iter().any(|o| o.after_setup))
                 .then_some((crate::privacy::FIRST_LOGON_COMMAND, "lean11 privacy settings"))
                 .into_iter()
-                // SetupComplete.cmd is skipped when setup uses an OEM product key: the first sign-in installs then
+                // SetupComplete.cmd is skipped when setup uses an OEM product key: the first sign-in sets up SSH and
+                // installs the software then (each script does nothing when SetupComplete ran it)
+                .chain(self.job.recipe.ssh_authorized_key.is_some().then_some((ssh::FIRST_LOGON_COMMAND, "lean11 SSH access")))
                 .chain((!self.job.recipe.software.is_empty()).then_some((crate::software::FIRST_LOGON_COMMAND, "lean11 software")))
                 .collect(),
         });

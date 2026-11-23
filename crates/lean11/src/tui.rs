@@ -745,8 +745,8 @@ impl App {
                     self.ssh_key_text = None;
                 } else {
                     match std::fs::read_to_string(&t) {
-                        Ok(k) if lean11_core::ssh::valid_authorized_key(&k) => self.ssh_key = t,
-                        Ok(_) => self.message = Some(format!("{t} is not an OpenSSH public key (.pub)")),
+                        Ok(k) if lean11_core::ssh::authorized_keys(&k).is_some() => self.ssh_key = t,
+                        Ok(_) => self.message = Some(format!("{t} holds no valid OpenSSH public key (.pub, one key per line)")),
                         Err(e) => self.message = Some(format!("Cannot read {t}: {e}")),
                     }
                 }
@@ -1445,6 +1445,8 @@ fn render(f: &mut Frame, app: &mut App) {
                     Line::from(
                         if p.kind == lean11_core::software::ProgramKind::Scoop {
                             "Set up per account at sign-in (needs internet then).".to_string()
+                        } else if p.kind == lean11_core::software::ProgramKind::Github {
+                            format!("Latest stable release from github.com/{}, checked by SHA-256 at build time.", p.github)
                         } else {
                             format!("Latest version from the winget catalog ({}), vendor download checked by SHA-256 at build time.", p.winget.join(" / "))
                         }
@@ -1473,10 +1475,15 @@ fn render(f: &mut Frame, app: &mut App) {
                 Line::from(format!("Compression: {:?}", r.compression)),
             ];
             if let Some(k) = &r.ssh_authorized_key {
-                let short = k.split_whitespace().take(1).chain(k.split_whitespace().nth(2)).collect::<Vec<_>>().join(" ");
+                let n = lean11_core::ssh::authorized_keys(k).map_or(0, |v| v.len());
                 lines.push(Line::from(vec![
                     "Remote:      ".into(),
-                    format!("OpenSSH on port 22, key {short} for the built-in Administrator (full rights)").bold(),
+                    format!(
+                        "OpenSSH on port 22, {} {} for the built-in Administrator (full rights)",
+                        if n == 1 { "key" } else { "keys" },
+                        lean11_core::ssh::key_summary(k)
+                    )
+                    .bold(),
                 ]));
             }
             if !r.software.is_empty() {

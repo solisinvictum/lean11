@@ -15,6 +15,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+pub mod github;
 pub mod openssh;
 pub mod winget;
 

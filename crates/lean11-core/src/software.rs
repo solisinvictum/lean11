@@ -25,6 +25,8 @@ pub enum ProgramKind {
     #[default]
     Winget,
     Scoop,
+    /// An installer from the latest stable GitHub release of `github` (owner/name), the file matching `asset`.
+    Github,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +41,13 @@ pub struct Program {
     pub winget: Vec<String>,
     #[serde(default)]
     pub extra_args: String,
+    /// kind = "github": repository (owner/name), release file pattern (one `*`) and silent install arguments
+    #[serde(default)]
+    pub github: String,
+    #[serde(default)]
+    pub asset: String,
+    #[serde(default)]
+    pub args: String,
     pub description: String,
 }
 
@@ -58,6 +67,10 @@ fn parse(text: &str) -> Result<Vec<Program>> {
     for p in &f.program {
         if p.kind == ProgramKind::Winget && p.winget.is_empty() {
             bail!("software {}: no winget id", p.id);
+        }
+        let repo_ok = p.github.split_once('/').is_some_and(|(o, n)| !o.is_empty() && !n.is_empty() && !n.contains('/'));
+        if p.kind == ProgramKind::Github && (!repo_ok || p.asset.is_empty() || p.args.is_empty()) {
+            bail!("software {}: kind github needs github = \"owner/name\", asset and args", p.id);
         }
     }
     Ok(f.program)
@@ -133,6 +146,24 @@ pub fn stage(ids: &[String], arch: &str, lang: &str, files: &Path, log: &mut dyn
                     sha256: ins.sha256,
                     kind: ins.kind,
                     args,
+                    file: ins.file_name,
+                });
+            }
+            ProgramKind::Github => {
+                let ins = lean11_msdl::github::resolve(&p.github, &p.asset, &p.name, &p.args)
+                    .with_context(|| format!("cannot resolve {}", p.name))?;
+                let path = lean11_msdl::winget::download(&ins, log)?;
+                fs::copy(&path, files.join(&ins.file_name)).with_context(|| format!("cannot stage {}", ins.file_name))?;
+                log(&format!("{} {} (GitHub release of {}, {})", p.name, ins.version, p.github, ins.file_name));
+                staged.push(Staged {
+                    id: p.id.clone(),
+                    name: p.name.clone(),
+                    version: ins.version,
+                    winget_id: String::new(),
+                    url: ins.url,
+                    sha256: ins.sha256,
+                    kind: ins.kind,
+                    args: ins.args,
                     file: ins.file_name,
                 });
             }
@@ -299,6 +330,8 @@ mod tests {
     fn validation() {
         assert!(validate(&["vlc".into(), "scoop".into()]).is_ok());
         assert!(validate(&["nope".into()]).is_err());
+        let v = program("vibepollo").unwrap();
+        assert_eq!((v.kind, v.github.as_str(), v.args.as_str()), (ProgramKind::Github, "Nonary/Vibepollo", "/qn /norestart"));
         assert!(validate(&["vlc".into(), "vlc".into()]).is_err());
     }
 }

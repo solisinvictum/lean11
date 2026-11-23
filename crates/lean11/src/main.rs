@@ -247,10 +247,11 @@ struct BuildArgs {
     /// Remove offline caches, archived logs and crash reports from the image
     #[arg(long)]
     remove_redundant_data: bool,
-    /// Install an OpenSSH server and authorize this public key file for the built-in Administrator
-    /// (elevated SSH access right after setup; downloads the OpenSSH installer)
+    /// Install an OpenSSH server and authorize the public keys of this file for the built-in Administrator
+    /// (elevated SSH access right after setup; downloads the OpenSSH installer). Repeatable; a file may hold
+    /// several keys, one per line
     #[arg(long, value_name = "PUBKEY")]
-    ssh_key: Option<PathBuf>,
+    ssh_key: Vec<PathBuf>,
     /// Custom expert action on an inventory item: kind:identity[:disable|remove] (repeatable),
     /// kinds: app, system-app, feature, capability, package, service, payload (see `lean11 inventory`)
     #[arg(long = "action")]
@@ -724,12 +725,19 @@ fn build(a: BuildArgs) -> Result<()> {
         r.keep_work = a.keep_work;
         r.omit_sxs |= a.omit_sxs;
         r.remove_redundant_data |= a.remove_redundant_data;
-        if let Some(k) = &a.ssh_key {
-            let text = std::fs::read_to_string(k).with_context(|| format!("cannot read the SSH key {}", k.display()))?;
-            if !lean11_core::ssh::valid_authorized_key(&text) {
-                anyhow::bail!("{} is not a valid OpenSSH public key", k.display());
+        if !a.ssh_key.is_empty() {
+            let mut keys: Vec<String> = Vec::new();
+            for k in &a.ssh_key {
+                let text = std::fs::read_to_string(k).with_context(|| format!("cannot read the SSH key {}", k.display()))?;
+                let found = lean11_core::ssh::authorized_keys(&text)
+                    .ok_or_else(|| anyhow::anyhow!("{} is not a valid OpenSSH public key file (one key per line)", k.display()))?;
+                for f in found {
+                    if !keys.contains(&f) {
+                        keys.push(f);
+                    }
+                }
             }
-            r.ssh_authorized_key = Some(text.trim().to_string());
+            r.ssh_authorized_key = Some(keys.join("\n"));
         }
         let cli_actions: Vec<lean11_core::inventory::Action> = a.actions.iter().map(|x| x.parse()).collect::<Result<_>>()?;
         r.actions.extend(cli_actions);
@@ -821,15 +829,31 @@ fn software_cmd(cmd: SoftwareCmd) -> Result<()> {
                 Some(s) => s.split(',').map(|id| software::program(id.trim()).ok_or_else(|| anyhow::anyhow!("unknown software {id}"))).collect::<Result<_>>()?,
                 None => software::catalog().iter().collect(),
             };
-            let index = lean11_msdl::winget::Index::load(&mut |m| eprintln!("{m}"))?;
+            // the winget index only when a winget program is listed
+            let index = if list.iter().any(|p| p.kind == software::ProgramKind::Winget) {
+                Some(lean11_msdl::winget::Index::load(&mut |m| eprintln!("{m}"))?)
+            } else {
+                None
+            };
             let mut failed = 0;
             for p in list {
                 if p.kind == software::ProgramKind::Scoop {
                     println!("{:<12} script  {}", p.id, software::SCOOP_INSTALLER_URL);
                     continue;
                 }
+                if p.kind == software::ProgramKind::Github {
+                    match lean11_msdl::github::resolve(&p.github, &p.asset, &p.name, &p.args) {
+                        Ok(i) => println!("{:<12} {} {} [github] {}\n             args: {}  sha256 {}", p.id, p.github, i.version, i.url, i.args, i.sha256),
+                        Err(e) => {
+                            failed += 1;
+                            println!("{:<12} ERROR {e:#}", p.id)
+                        }
+                    }
+                    continue;
+                }
                 let ids: Vec<&str> = p.winget.iter().map(String::as_str).collect();
-                match lean11_msdl::winget::resolve(&index, &ids, &arch, &lang) {
+                let Some(index) = &index else { continue };
+                match lean11_msdl::winget::resolve(index, &ids, &arch, &lang) {
                     Ok(i) => println!("{:<12} {} {} [{} {}] {}\n             args: {}  sha256 {}", p.id, i.id, i.version, i.kind, i.architecture, i.url, i.args, i.sha256),
                     Err(e) => {
                         failed += 1;
