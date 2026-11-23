@@ -73,7 +73,10 @@ for the fallback `LEAN11_WIMLIB=1`, which uses `wimlib-imagex` and FUSE mounts i
 
 Building does not need root: the image is extracted into the job folder (real hard links), edited there and
 written back. The working folder needs room for the extracted image (about 15 GiB for Windows 11 Pro) besides
-the WIM files.
+the WIM files. Its file system must allow file names of 255 characters and hard links, and it cannot be FAT or
+exFAT. An encrypted home folder with eCryptfs (for example Linux Mint's "encrypt home") only allows 143 characters:
+put the working folder elsewhere with `--work` (or "Working directory" in the TUI settings), e.g. `/var/tmp`.
+lean11 checks this before it starts.
 
 ```sh
 lean11 tui                                   # wizard: mode, source/download, edition, components, privacy, custom, software, settings

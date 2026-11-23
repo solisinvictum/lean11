@@ -381,6 +381,13 @@ fn check_host(work: &Path, output: &Path, required: u64) -> Result<()> {
     if wfree < required {
         bail!("The workspace needs at least {} GiB free for this image.", required.div_ceil(GIB));
     }
+    if let Some(max) = name_limit(work) {
+        bail!(
+            "The workspace file system only allows file names up to {max} characters, but Windows images contain names up to {NAME_MAX}. \
+             This is typical for an encrypted home folder (eCryptfs allows 143). \
+             Choose a workspace on another file system (--work, or \"Working directory\" in the TUI settings), e.g. /var/tmp or an unencrypted drive."
+        );
+    }
     let out_dir = std::path::absolute(output)?.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
     let (otype, ofree) = fs_info(&out_dir)?;
     if otype == FsKind::Fat {
@@ -391,6 +398,37 @@ fn check_host(work: &Path, output: &Path, required: u64) -> Result<()> {
         bail!("The output drive needs at least 12 GiB free.");
     }
     Ok(())
+}
+
+/// Longest file name component Windows images use (NTFS limit).
+const NAME_MAX: usize = 255;
+
+/// `Some(longest accepted length)` when `dir` rejects file names of `NAME_MAX` characters
+/// (eCryptfs with encrypted names stops at 143); `None` when they fit or the probe is inconclusive.
+fn name_limit(dir: &Path) -> Option<usize> {
+    let fits = |n: usize| -> Option<bool> {
+        let mut name = format!(".lean11-probe-{}-", std::process::id());
+        name.extend(std::iter::repeat_n('x', n.saturating_sub(name.len())));
+        let p = dir.join(&name);
+        match fs::OpenOptions::new().write(true).create_new(true).open(&p) {
+            Ok(_) => {
+                let _ = fs::remove_file(&p);
+                Some(true)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidFilename => Some(false),
+            Err(_) => None,
+        }
+    };
+    if fits(NAME_MAX)? {
+        return None;
+    }
+    // binary search for the real limit, only to name it in the message
+    let (mut lo, mut hi) = (32, NAME_MAX);
+    while lo + 1 < hi {
+        let mid = (lo + hi) / 2;
+        if fits(mid).unwrap_or(false) { lo = mid } else { hi = mid }
+    }
+    Some(lo)
 }
 
 fn file_digest(p: &Path) -> Result<(u64, String)> {
@@ -1671,5 +1709,20 @@ pub fn recipe_for(mode: Mode, source: PathBuf, output: PathBuf) -> Recipe {
         adapt_actions: false,
         software: Vec::new(),
         breaking_acknowledged: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_names_fit_in_a_normal_workspace() {
+        let dir = std::env::temp_dir().join(format!("lean11-namelimit-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        assert_eq!(name_limit(&dir), None);
+        // the probe leaves nothing behind
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
+        fs::remove_dir(&dir).unwrap();
     }
 }
