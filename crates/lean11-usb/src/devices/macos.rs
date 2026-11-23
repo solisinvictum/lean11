@@ -102,6 +102,8 @@ pub fn open_raw(d: &Device, write: bool) -> Result<(File, u64)> {
 
 /// Flushes the raw disk. `File::sync_all` uses F_FULLFSYNC on macOS, which raw devices refuse (ENOTTY):
 /// a plain fsync, then DKIOCSYNCHRONIZECACHE asks the drive to empty its write cache.
+/// (The module is also built for tests on other systems; this part only on macOS.)
+#[cfg(target_os = "macos")]
 pub fn finish(f: &File) -> Result<()> {
     use std::os::fd::AsRawFd;
     let fd = f.as_raw_fd();
