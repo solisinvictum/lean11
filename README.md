@@ -1,5 +1,18 @@
 # lean11
 
+> **A note from the author**
+>
+> lean11 was mentioned by Mental Outlaw in his video
+> [Using tiny11builder to Debloat Windows 11](https://www.youtube.com/watch?v=1-GlnimDG3I), and since then a lot of
+> you have found your way here. I'm really glad about that: thank you for the stars, the issues and all the
+> feedback.
+>
+> Since it came up in the comments: yes, lean11 was built with heavy help from AI. That is what makes it possible
+> for me to build and maintain a project like this next to my day job. It does not mean nobody looks at it: I keep
+> an eye on the quality and the behavior of the app, and every single feature has been tested by a human (me)
+> before it ships. On top of that, every removable item is rated by real test installs (see
+> [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md)). If something does not work for you, please open an issue.
+
 Build trimmed, private Windows 11 ISOs on Linux, macOS and Windows, without DISM or a VM: remove bundled apps
 and features, apply a verified catalog of privacy settings, add custom removals from the image's full inventory,
 reuse your choice as a template. The DISM, CBS and Appx operations it needs are reimplemented natively (offline
