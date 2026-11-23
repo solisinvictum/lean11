@@ -1,0 +1,10 @@
+target
+build_deployment
+reference
+*.iso
+.git
+*.wim
+*.esd
+media
+._*
+.pi-stand

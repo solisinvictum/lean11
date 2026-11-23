@@ -203,6 +203,23 @@ runtime dependencies; `wimtools` and `fuse3` are only needed for the fallback `L
 cargo build --release --locked
 ```
 
+### Container
+
+The [Containerfile](Containerfile) builds lean11 in a container and runs it in a small Debian image (about
+100 MB), with Podman or Docker. Mount a folder for the source ISO, the output and the working copy (about
+40 GiB free on a file system with hard links and 255-character names):
+
+```sh
+podman build -t lean11 .                     # docker build -t lean11 -f Containerfile .
+podman run --rm -it -v "$PWD:/data" lean11 download --lang en-US --out /data
+podman run --rm -it -v "$PWD:/data" lean11 build /data/Win11_26H2_English_x64.iso --out /data/lean11.iso
+podman run --rm -it -v "$PWD:/data" lean11 tui
+```
+
+With Docker add `--user "$(id -u):$(id -g)"` so the files belong to you. The same image works in CI, for
+example a workflow in your own fork that downloads the ISO and builds it; mind the free disk space of the runner,
+and keep in mind that Microsoft's license does not allow publishing the resulting ISOs.
+
 ## License
 
 Copyright (C) 2026 solisinvictum
