@@ -1,5 +1,8 @@
 //! autounattend.xml for the output ISO.
-//! No account, password, product key, automatic logon or EULA acceptance is injected.
+//! No account, password, product key, automatic logon or EULA acceptance is injected. The windowsPE
+//! pass carries an empty `<ProductKey><Key/>` like tiny11builder's answer file: with `InstallFrom` and
+//! no `UserData/ProductKey` at all, Setup stops with "cannot read the <ProductKey> setting from the
+//! unattend answer file"; the empty key skips the key page without supplying one.
 
 pub struct UnattendOptions {
     /// "amd64" or "arm64".
@@ -23,6 +26,7 @@ pub fn build(o: &UnattendOptions) -> String {
         "      <ImageInstall>\n        <OSImage>\n          <Compact>{}</Compact>\n          <WillShowUI>OnError</WillShowUI>\n\
          \x20         <InstallFrom>\n            <MetaData wcm:action=\"add\">\n              <Key>/IMAGE/INDEX</Key>\n\
          \x20             <Value>1</Value>\n            </MetaData>\n          </InstallFrom>\n        </OSImage>\n      </ImageInstall>\n\
+         \x20     <UserData>\n        <ProductKey>\n          <Key/>\n        </ProductKey>\n      </UserData>\n\
          \x20     <DynamicUpdate>\n        <Enable>false</Enable>\n      </DynamicUpdate>\n",
         o.compact
     );
@@ -69,6 +73,8 @@ mod tests {
         assert!(x.contains("HideOnlineAccountScreens"));
         assert!(x.contains("processorArchitecture=\"amd64\""));
         assert!(x.contains("<Key>/IMAGE/INDEX</Key>"));
+        // Setup refuses an answer file with InstallFrom but without UserData/ProductKey
+        assert!(x.contains("<UserData>\n        <ProductKey>\n          <Key/>\n        </ProductKey>\n      </UserData>"), "{x}");
         let y = build(&UnattendOptions { arch: "arm64", compact: false, local_account: false, first_logon: Vec::new() });
         assert!(!y.contains("HideOnlineAccountScreens") && y.contains("arm64"));
     }
