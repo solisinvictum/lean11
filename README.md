@@ -216,9 +216,18 @@ podman run --rm -it -v "$PWD:/data" lean11 build /data/Win11_26H2_English_x64.is
 podman run --rm -it -v "$PWD:/data" lean11 tui
 ```
 
-With Docker add `--user "$(id -u):$(id -g)"` so the files belong to you. The same image works in CI, for
-example a workflow in your own fork that downloads the ISO and builds it; mind the free disk space of the runner,
-and keep in mind that Microsoft's license does not allow publishing the resulting ISOs.
+With Docker add `--user "$(id -u):$(id -g)"` so the files belong to you.
+
+### GitHub Actions
+
+Fork this repository, open **Actions**, choose **build-iso** and **Run workflow**: pick the language, edition,
+mode (or a template from your fork) and compression. The workflow downloads Windows 11 from Microsoft, builds it
+with the latest lean11 release and uploads the ISO as an artifact (kept for one day by default). A run takes
+about 35 minutes on a standard runner and needs about 40 GiB of its disk.
+
+Keep the ISO to yourself: Microsoft's license does not allow redistributing Windows images, and in a public fork
+every signed-in GitHub user can download the artifacts of a run. Delete the run once you have the ISO, or use a
+private fork (artifacts of private repositories count against your storage quota).
 
 ## License
 

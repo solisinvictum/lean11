@@ -1,0 +1,127 @@
+# Builds a trimmed Windows 11 ISO on a GitHub runner: fork the repository, open Actions, choose
+# "build-iso" and "Run workflow". The ISO is downloaded from Microsoft, trimmed with lean11 and uploaded
+# as a workflow artifact (kept for one day by default).
+#
+# Keep the ISO to yourself: Microsoft's license does not allow redistributing Windows images. In a
+# public repository every signed-in GitHub user can download the artifacts of a run, so delete the run
+# (or the artifact) once you have the ISO, or run the workflow in a private fork.
+name: build-iso
+
+on:
+  workflow_dispatch:
+    inputs:
+      lang:
+        description: "Windows language (locale like en-US, de-DE, or a name like English)"
+        default: en-US
+      edition:
+        description: "Edition (index, name or edition id)"
+        default: Professional
+      mode:
+        description: "lean (serviceable) or core (smallest, cannot be updated)"
+        type: choice
+        options: [lean, core]
+        default: lean
+      template:
+        description: "Optional: path of a template or recipe in this repository (lean11 --save-template / the TUI)"
+        default: ""
+      compression:
+        description: "recovery = smallest ISO, slowest; fast = quickest build"
+        type: choice
+        options: [recovery, maximum, fast]
+        default: recovery
+      lean11:
+        description: "lean11 to use: latest (release of solisinvictum/lean11), a tag like v0.1.2, or source (build this checkout)"
+        default: latest
+      upload:
+        description: "Upload the ISO as an artifact"
+        type: boolean
+        default: true
+      retention:
+        description: "Days to keep the artifact (1-90)"
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Free disk space
+        run: |
+          df -h / /mnt
+          # preinstalled toolchains this job does not need (about 30 GB)
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+            /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium /usr/lib/jvm || true
+          sudo docker image prune -a -f >/dev/null 2>&1 || true
+          df -h / /mnt
+          # work where most space is free (the temporary disk /mnt when it is bigger)
+          root=$(df --output=avail -B1 / | tail -1); mnt=$(df --output=avail -B1 /mnt 2>/dev/null | tail -1 || echo 0)
+          if [ "${mnt:-0}" -gt "$root" ]; then base=/mnt/lean11; else base=$HOME/lean11; fi
+          sudo mkdir -p "$base" && sudo chown "$(id -u):$(id -g)" "$base"
+          echo "BASE=$base" >> "$GITHUB_ENV"
+          echo "working in $base: $(( $(df --output=avail -B1 "$base" | tail -1) / 1073741824 )) GiB free"
+
+      - name: Get lean11
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANT: ${{ inputs.lean11 }}
+        run: |
+          mkdir -p "$BASE/bin"
+          if [ "$WANT" = source ]; then
+            cargo build --release --locked -p lean11
+            cp target/release/lean11 "$BASE/bin/"
+          else
+            tag=$([ "$WANT" = latest ] && echo "" || echo "$WANT")
+            gh release download $tag --repo solisinvictum/lean11 --pattern '*-linux-x86_64.tar.gz*' --dir "$BASE/dl"
+            (cd "$BASE/dl" && sha256sum -c ./*.sha256)
+            tar -xzf "$BASE"/dl/*-linux-x86_64.tar.gz -C "$BASE/dl"
+            find "$BASE/dl" -type f -name lean11 -exec cp {} "$BASE/bin/" \;
+          fi
+          "$BASE/bin/lean11" --version
+
+      - name: Download Windows 11 from Microsoft
+        env:
+          LANG_IN: ${{ inputs.lang }}
+        run: |
+          mkdir -p "$BASE/iso"
+          "$BASE/bin/lean11" download --lang "$LANG_IN" --arch x64 --out "$BASE/iso"
+          ls -l "$BASE/iso"
+
+      - name: Build
+        env:
+          EDITION: ${{ inputs.edition }}
+          MODE: ${{ inputs.mode }}
+          TEMPLATE: ${{ inputs.template }}
+          COMPRESSION: ${{ inputs.compression }}
+        run: |
+          src=$(ls "$BASE"/iso/*.iso | head -1)
+          name="lean11-$(basename "$src" .iso).iso"
+          args=(build "$src" --out "$BASE/out/$name" --work "$BASE/work" --edition "$EDITION" --compression "$COMPRESSION")
+          if [ -n "$TEMPLATE" ]; then args+=(--template "$GITHUB_WORKSPACE/$TEMPLATE"); else args+=(--mode "$MODE"); fi
+          [ "$MODE" = core ] && args+=(--accept-core)
+          mkdir -p "$BASE/out"
+          # record the disk use while building (peak printed at the end)
+          (while sleep 30; do df --output=used -B1 "$BASE" | tail -1; done > "$BASE/df.log") &
+          watcher=$!
+          "$BASE/bin/lean11" "${args[@]}"
+          kill $watcher
+          echo "peak disk use: $(( $(sort -n "$BASE/df.log" | tail -1) / 1073741824 )) GiB"
+          # the source ISO is not needed any more
+          rm -f "$src"
+          ls -l "$BASE/out"
+          echo "ISO_NAME=$name" >> "$GITHUB_ENV"
+          df -h "$BASE"
+
+      - name: Upload the ISO
+        if: ${{ inputs.upload }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ISO_NAME }}
+          path: ${{ env.BASE }}/out/*.iso*
+          retention-days: ${{ inputs.retention }}
+          compression-level: 0
+          if-no-files-found: error
