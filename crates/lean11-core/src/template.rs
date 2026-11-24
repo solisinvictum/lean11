@@ -57,6 +57,9 @@ pub struct Template {
     pub expert_acknowledged: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub breaking_acknowledged: bool,
+    /// Setup answers without the account password (templates are meant to be passed on).
+    #[serde(default)]
+    pub setup_answers: crate::unattend::SetupAnswers,
 }
 
 impl Template {
@@ -85,6 +88,7 @@ impl Template {
             core_acknowledged: r.core_acknowledged,
             expert_acknowledged: r.expert_acknowledged,
             breaking_acknowledged: r.breaking_acknowledged,
+            setup_answers: crate::unattend::SetupAnswers { password: None, ..r.setup_answers.clone() },
         }
     }
 
@@ -145,6 +149,11 @@ impl Template {
         r.core_acknowledged = self.core_acknowledged;
         r.expert_acknowledged = self.expert_acknowledged;
         r.breaking_acknowledged = self.breaking_acknowledged;
+        // the password stays when the template names the account the recipe already has
+        let keep = (self.setup_answers.account.is_some() && self.setup_answers.account == r.setup_answers.account)
+            .then(|| r.setup_answers.password.clone())
+            .flatten();
+        r.setup_answers = crate::unattend::SetupAnswers { password: keep, ..self.setup_answers.clone() };
         r.normalize_mode();
         notes
     }
@@ -168,7 +177,10 @@ impl Template {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
-        std::fs::write(path, serde_json::to_vec_pretty(self)?).with_context(|| format!("cannot write {}", path.display()))
+        // a template never carries a password, also not one from a hand-edited file it was loaded from
+        let mut t = self.clone();
+        t.setup_answers.password = None;
+        std::fs::write(path, serde_json::to_vec_pretty(&t)?).with_context(|| format!("cannot write {}", path.display()))
     }
 }
 

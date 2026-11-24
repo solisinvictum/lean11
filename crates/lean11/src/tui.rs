@@ -12,6 +12,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Gauge, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::{DefaultTerminal, Frame};
 use lean11_core::build::{Builder, Recipe, recipe_for};
+use lean11_core::unattend::SetupAnswers;
 use lean11_core::catalog::{self, CleanupOption, Kind, Mode};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use lean11_core::inventory::{self, Action, Item, Kind as ItemKind, Mode as ActMode};
@@ -101,6 +102,10 @@ enum Field {
     PrivacyFilter,
     SaveTemplate,
     LoadTemplate,
+    Locale,
+    Keyboard,
+    Account,
+    Password,
 }
 
 /// A row of the privacy step: a category heading or a setting with its state for the current recipe.
@@ -141,6 +146,8 @@ struct App {
     no_prompt: bool,
     omit_sxs: bool,
     remove_redundant_data: bool,
+    /// Answers for the Windows setup pages (region, keyboard, network, account, privacy)
+    answers: SetupAnswers,
     /// Public key file for the OpenSSH option (Custom); empty = off
     ssh_key: String,
     /// Key text from a loaded recipe (when no file is chosen)
@@ -219,6 +226,7 @@ impl App {
             opt_state: ListState::default().with_selected(Some(0)),
             compression: Compression::Recovery,
             local_account: true,
+            answers: SetupAnswers::default(),
             compact: true,
             no_prompt: false,
             omit_sxs: false,
@@ -292,6 +300,7 @@ impl App {
         r.edition = self.ed_state.selected().and_then(|i| self.editions.get(i)).map(|e| e.index.to_string());
         r.compression = self.compression;
         r.local_account = self.local_account;
+        r.setup_answers = self.answers.clone();
         r.compact = self.compact;
         r.no_prompt = self.no_prompt;
         r.omit_sxs = self.omit_sxs;
@@ -460,6 +469,7 @@ impl App {
         }
         self.compression = r.compression;
         self.local_account = r.local_account;
+        self.answers = r.setup_answers.clone();
         self.compact = r.compact;
         self.no_prompt = r.no_prompt;
         self.omit_sxs = r.omit_sxs;
@@ -495,6 +505,7 @@ impl App {
         self.software = r.software.clone();
         self.compression = r.compression;
         self.local_account = r.local_account;
+        self.answers = r.setup_answers.clone();
         self.compact = r.compact;
         self.no_prompt = r.no_prompt;
         self.omit_sxs = r.omit_sxs;
@@ -848,7 +859,37 @@ impl App {
             } else {
                 self.ssh_key.clone()
             }),
+            ("Answer setup questions (region, keyboard, network, privacy)".into(), yn(self.answers.enabled)),
+            ("   Region and formats".into(), self.answer_row(self.answers.locale.clone(), || format!("as the ISO ({})", self.image_language()))),
+            ("   Keyboard".into(), self.answer_row(self.answers.keyboard.clone(), || "as the region".into())),
+            ("   Local account".into(), self.answer_row(self.answers.account.clone(), || "asked during setup".into())),
+            ("   Account password".into(), if !self.answers.enabled || self.answers.account.is_none() {
+                "(no account)".into()
+            } else if self.answers.has_password() {
+                "set (readable in autounattend.xml on the media)".into()
+            } else {
+                "none".into()
+            }),
         ]
+    }
+
+    /// A setup-answer value, its default, or "(off)".
+    fn answer_row(&self, v: Option<String>, default: impl FnOnce() -> String) -> String {
+        if !self.answers.enabled {
+            "(Windows asks)".into()
+        } else {
+            v.unwrap_or_else(default)
+        }
+    }
+
+    /// Language of the chosen edition (the display language Windows will have).
+    fn image_language(&self) -> String {
+        self.ed_state
+            .selected()
+            .and_then(|i| self.editions.get(i))
+            .map(|e| e.default_language.clone())
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| "language of the ISO".into())
     }
 
     /// Takes over a typed or picked value.
@@ -885,6 +926,38 @@ impl App {
             Field::Language => {
                 self.language = text;
                 self.start_download();
+            }
+            Field::Locale | Field::Keyboard | Field::Account => {
+                let t = text.trim().to_string();
+                let v = (!t.is_empty()).then_some(t.clone());
+                let check = match field {
+                    Field::Locale if !t.is_empty() && !lean11_core::unattend::valid_locale(&t) => Err(format!("{t} is not a language tag like de-DE or en-GB")),
+                    Field::Keyboard if !t.is_empty() && !lean11_core::unattend::valid_keyboard(&t) => {
+                        Err(format!("{t} is not a keyboard like de-DE, de-CH or 0407:00000407"))
+                    }
+                    Field::Account if !t.is_empty() => lean11_core::unattend::check_account(&t).map_err(|e| e.to_string()),
+                    _ => Ok(()),
+                };
+                match check {
+                    Err(m) => self.message = Some(m),
+                    Ok(()) => match field {
+                        Field::Locale => self.answers.locale = v,
+                        Field::Keyboard => self.answers.keyboard = v,
+                        _ => {
+                            if v != self.answers.account {
+                                self.answers.password = None;
+                            }
+                            self.answers.account = v;
+                        }
+                    },
+                }
+            }
+            Field::Password => {
+                if let Err(e) = lean11_core::unattend::check_password(&text) {
+                    self.message = Some(e.to_string());
+                } else {
+                    self.answers.password = (!text.is_empty()).then_some(text);
+                }
             }
             Field::Filter => {
                 self.inv_filter = text;
@@ -923,8 +996,11 @@ impl App {
                 let r = recipe
                     .validate()
                     .and_then(|()| Ok(serde_json::to_vec_pretty(&recipe)?))
-                    .and_then(|j| Ok(std::fs::write(&text, j)?));
+                    .and_then(|j| Ok(lean11_core::build::write_private(std::path::Path::new(&text), &j)?));
                 self.message = Some(match r {
+                    Ok(()) if recipe.setup_answers.has_password() => {
+                        format!("Recipe saved to {text} (it holds the account password; only you can read the file)")
+                    }
                     Ok(()) => format!("Recipe saved to {text}"),
                     Err(e) => format!("Cannot save the recipe: {e:#}"),
                 });
@@ -1328,6 +1404,11 @@ impl App {
                     10 => self.remove_redundant_data = !self.remove_redundant_data,
                     11 => self.keep_work = !self.keep_work,
                     12 if self.mode == Mode::Custom => self.browse(Field::SshKey),
+                    13 => self.answers.enabled = !self.answers.enabled,
+                    14 if self.answers.enabled => self.editing = Some((Field::Locale, self.answers.locale.clone().unwrap_or_default())),
+                    15 if self.answers.enabled => self.editing = Some((Field::Keyboard, self.answers.keyboard.clone().unwrap_or_default())),
+                    16 if self.answers.enabled => self.editing = Some((Field::Account, self.answers.account.clone().unwrap_or_default())),
+                    17 if self.answers.enabled && self.answers.account.is_some() => self.editing = Some((Field::Password, String::new())),
                     _ => {}
                 },
                 KeyCode::Enter | KeyCode::Right => self.step = Step::Review,
@@ -1724,6 +1805,17 @@ fn render(f: &mut Frame, app: &mut App) {
                     }
                 )),
                 Line::from(format!("Compression: {:?}", r.compression)),
+                Line::from(format!(
+                    "Setup:       {}",
+                    match (r.setup_answers.enabled, &r.setup_answers.account) {
+                        (false, _) => "Windows asks for region, keyboard, network, account and privacy".to_string(),
+                        (true, None) => "region, keyboard, network and privacy answered; setup asks for the account".into(),
+                        (true, Some(n)) => format!(
+                            "region, keyboard, network and privacy answered; account {n} {}",
+                            if r.setup_answers.has_password() { "with a password (readable on the media)" } else { "without a password" }
+                        ),
+                    }
+                )),
             ];
             if let Some(k) = &r.ssh_authorized_key {
                 let n = lean11_core::ssh::authorized_keys(k).map_or(0, |v| v.len());
@@ -1927,8 +2019,13 @@ fn render(f: &mut Frame, app: &mut App) {
             Field::PrivacyFilter => "Filter privacy settings (part of the title, id or category, empty = all)",
             Field::SaveTemplate => "Save the template (your choice without source and output) as",
             Field::LoadTemplate => "Load a template from",
+            Field::Locale => "Region and formats for setup, e.g. de-DE or en-GB (empty = as the ISO)",
+            Field::Keyboard => "Keyboard, e.g. de-DE, de-CH or 0407:00000407, several separated by ; (empty = as the region)",
+            Field::Account => "Local administrator account created by setup (empty = setup asks)",
+            Field::Password => "Password of the account (empty = none); it is readable in autounattend.xml on the media",
         };
-        popup(f, title, &format!("{text}▏\n\nEnter accept, Esc cancel"));
+        let shown = if matches!(field, Field::Password) { "•".repeat(text.chars().count()) } else { text.clone() };
+        popup(f, title, &format!("{shown}▏\n\nEnter accept, Esc cancel"));
     }
     if let Some((_, p)) = &mut app.picker {
         p.render(f);

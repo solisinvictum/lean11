@@ -265,6 +265,23 @@ struct BuildArgs {
     /// Remove offline caches, archived logs and crash reports from the image
     #[arg(long)]
     remove_redundant_data: bool,
+    /// Let Windows setup ask for region, keyboard, network, account and privacy as usual (by default lean11
+    /// answers these pages)
+    #[arg(long)]
+    ask_setup_questions: bool,
+    /// Region and formats for setup, e.g. en-GB (default: the language of the ISO)
+    #[arg(long, value_name = "LANG-REGION")]
+    locale: Option<String>,
+    /// Keyboard for setup: de-CH or 0807:00000807, several separated by ; (default: the locale)
+    #[arg(long, value_name = "KEYBOARD")]
+    keyboard: Option<String>,
+    /// Create this local administrator account during setup (skips the account pages)
+    #[arg(long, value_name = "NAME")]
+    account: Option<String>,
+    /// Password of --account from the first line of this file (without it the account has no password);
+    /// it is readable in autounattend.xml on the ISO or stick
+    #[arg(long, value_name = "FILE")]
+    account_password_file: Option<PathBuf>,
     /// Install an OpenSSH server and authorize the public keys of this file for the built-in Administrator
     /// (elevated SSH access right after setup; downloads the OpenSSH installer). Repeatable; a file may hold
     /// several keys, one per line
@@ -781,6 +798,35 @@ fn build(a: BuildArgs) -> Result<()> {
         r.keep_work = a.keep_work;
         r.omit_sxs |= a.omit_sxs;
         r.remove_redundant_data |= a.remove_redundant_data;
+        let sa = &mut r.setup_answers;
+        sa.enabled &= !a.ask_setup_questions;
+        if a.locale.is_some() {
+            sa.locale = a.locale.clone();
+        }
+        if a.keyboard.is_some() {
+            sa.keyboard = a.keyboard.clone();
+        }
+        if let Some(n) = &a.account {
+            if sa.account.as_ref() != Some(n) {
+                sa.password = None;
+            }
+            sa.account = Some(n.clone());
+        }
+        // naming a setup answer means answering (also when a template had the answers off)
+        if !a.ask_setup_questions && (a.locale.is_some() || a.keyboard.is_some() || a.account.is_some()) {
+            sa.enabled = true;
+        }
+        if let Some(f) = &a.account_password_file {
+            if sa.account.is_none() {
+                anyhow::bail!("--account-password-file needs an account (--account NAME or one from the template)");
+            }
+            let t = std::fs::read_to_string(f).with_context(|| format!("cannot read the password file {}", f.display()))?;
+            sa.password = Some(t.lines().next().unwrap_or("").to_string());
+        }
+        sa.validate()?;
+        if a.ask_setup_questions && (a.locale.is_some() || a.keyboard.is_some() || a.account.is_some()) {
+            anyhow::bail!("--ask-setup-questions leaves these pages to Windows setup: drop --locale, --keyboard and --account");
+        }
         if !a.ssh_key.is_empty() {
             let mut keys: Vec<String> = Vec::new();
             for k in &a.ssh_key {
@@ -847,12 +893,19 @@ fn build(a: BuildArgs) -> Result<()> {
         r
     };
     if let Some(path) = &a.save_template {
+        if recipe.setup_answers.has_password() {
+            eprintln!("note: templates carry no account password; give it with --account-password-file when building");
+        }
         lean11_core::template::Template::from_recipe(&recipe).save(path)?;
         println!("{}", path.display());
         return Ok(());
     }
     if a.print_recipe {
-        println!("{}", serde_json::to_string_pretty(&recipe)?);
+        let mut shown = recipe.clone();
+        if shown.setup_answers.password.take().is_some_and(|p| !p.is_empty()) {
+            eprintln!("note: the account password is left out of the printed recipe");
+        }
+        println!("{}", serde_json::to_string_pretty(&shown)?);
         return Ok(());
     }
     let out_abs = std::path::absolute(&recipe.output)?;

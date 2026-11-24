@@ -74,6 +74,9 @@ pub struct Recipe {
     /// Only write a USB stick (the "Write USB stick" stage), no ISO file.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_iso: bool,
+    /// Answers for the questions Windows setup asks after the first reboot (on unless switched off).
+    #[serde(default)]
+    pub setup_answers: unattend::SetupAnswers,
 }
 
 impl Recipe {
@@ -153,6 +156,7 @@ impl Recipe {
         if !self.actions.is_empty() && !self.expert_acknowledged {
             bail!("Custom removals require acknowledgement of the risk of an unbootable image.");
         }
+        self.setup_answers.validate()?;
         if let Some(k) = &self.ssh_authorized_key {
             if ssh::authorized_keys(k).is_none() {
                 bail!("The SSH key is not a valid OpenSSH public key (expected one key per line, e.g. 'ssh-ed25519 AAAA... comment').");
@@ -503,9 +507,15 @@ impl<'a> Builder<'a> {
         let digest = recipe_digest(&recipe)?;
         let dir = work.join(format!("lean11-{}", uuid::Uuid::new_v4().simple()));
         fs::create_dir(&dir)?;
+        // the recipe may hold an account password: the job folder is the user's alone
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+        }
         // locked before anything else is written, so `recover` never sees it unlocked
         let lock = lock_dir(&dir).ok_or_else(|| anyhow!("cannot lock the new job folder"))?;
-        fs::write(dir.join("recipe.json"), serde_json::to_vec_pretty(&recipe)?)?;
+        write_private(&dir.join("recipe.json"), &serde_json::to_vec_pretty(&recipe)?)?;
         let job = Job {
             recipe,
             stage: Stage::Start,
@@ -633,7 +643,7 @@ impl<'a> Builder<'a> {
 
     fn save(&self) -> Result<()> {
         let tmp = self.dir.join("job.json.new");
-        fs::write(&tmp, serde_json::to_vec_pretty(&self.job)?)?;
+        write_private(&tmp, &serde_json::to_vec_pretty(&self.job)?)?;
         fs::rename(tmp, self.dir.join("job.json"))?;
         Ok(())
     }
@@ -1572,6 +1582,10 @@ impl<'a> Builder<'a> {
             arch: if arch == "arm64" { "arm64" } else { "amd64" },
             compact: self.job.recipe.compact,
             local_account: self.job.recipe.local_account,
+            answers: unattend::Answers::resolve(
+                &self.job.recipe.setup_answers,
+                self.job.image.as_ref().map(|i| i.default_language.as_str()).unwrap_or(""),
+            ),
             first_logon: crate::privacy::resolve(&self.job.recipe, &mut |_| {})?
                 .iter()
                 .any(|s| s.ops.iter().any(|o| o.after_setup))
@@ -1583,6 +1597,15 @@ impl<'a> Builder<'a> {
                 .chain((!self.job.recipe.software.is_empty()).then_some((crate::software::FIRST_LOGON_COMMAND, "lean11 software")))
                 .collect(),
         });
+        let a = &self.job.recipe.setup_answers;
+        if a.enabled {
+            let what = match &a.account {
+                Some(n) if a.has_password() => format!("account {n} with a password (readable in autounattend.xml on the media)"),
+                Some(n) => format!("account {n} without a password"),
+                None => "the account is asked for".into(),
+            };
+            self.log(&format!("setup answers: region, keyboard, network and privacy pages answered; {what}"));
+        }
         fs::write(media.join("autounattend.xml"), xml)?;
         self.record_media("autounattend.xml")?;
         self.save()
@@ -1738,6 +1761,25 @@ pub fn sha256(p: &Path) -> Result<String> {
     Ok(hex::encode(h.finalize()))
 }
 
+/// Writes a file only its owner can read (Unix 0600, also when it exists): recipes and job state may hold an
+/// account password.
+pub fn write_private(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    let mut o = fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        o.mode(0o600);
+        let f = o.open(path)?;
+        f.set_permissions(fs::Permissions::from_mode(0o600))?;
+        return (&f).write_all(data);
+    }
+    #[cfg(not(unix))]
+    {
+        o.open(path)?.write_all(data)
+    }
+}
+
 /// Default recipe for a mode.
 pub fn recipe_for(mode: Mode, source: PathBuf, output: PathBuf) -> Recipe {
     Recipe {
@@ -1765,6 +1807,7 @@ pub fn recipe_for(mode: Mode, source: PathBuf, output: PathBuf) -> Recipe {
         software: Vec::new(),
         breaking_acknowledged: false,
         no_iso: false,
+        setup_answers: unattend::SetupAnswers::default(),
     }
 }
 

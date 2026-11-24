@@ -123,6 +123,24 @@ and keep the image serviceable; `remove-winre` and `trim-winsxs` are irreversibl
 and fails without it. Example, only Defender off:
 `lean11 build Win11.iso --mode lean --enable disable-defender --out lean11-nodefender.iso`.
 
+### Setup questions
+
+After the first reboot Windows setup asks for the region, keyboard (and a second layout), network, account and
+privacy choices. lean11 answers these pages by default:
+
+- region, formats and keyboard follow the language of the ISO; `--locale en-GB` and `--keyboard de-CH` (or
+  `0807:00000807`, several separated by `;`) change them
+- the network page is skipped (set up Wi-Fi in Windows afterwards)
+- the privacy pages (location, Find my device, diagnostic data, inking and typing, tailored experiences) are
+  answered with "No" and "Required only"
+- `--account NAME` creates a local administrator account, so setup skips the account pages too; without a password
+  or with `--account-password-file FILE` (first line). The password is readable in `autounattend.xml` on the ISO or
+  stick, so treat that media like the password. Templates never carry it. Without `--account` setup asks for the
+  account as usual
+
+`--ask-setup-questions` leaves all of these pages to setup. In the TUI the same options are under Settings.
+The language, keyboard and disk pages before the first reboot are not answered.
+
 ### Privacy settings
 
 lean11 brings its own catalog of more than 160 privacy, telemetry and hardening settings (telemetry, app
