@@ -72,8 +72,22 @@ Download the archive for your system from the [releases page](../../releases) an
 | macOS (Apple Silicon) | `lean11-<version>-macos-arm64.tar.gz` |
 | Windows 10/11 x64 | `lean11-<version>-windows-x64.zip` |
 
-Each archive holds one self-contained binary and a `.sha256` file lies next to it. On macOS, remove the download
-quarantine once (`xattr -d com.apple.quarantine lean11`) or allow it under System Settings, Privacy & Security.
+Each archive holds one self-contained binary and a `.sha256` file lies next to it.
+
+On macOS the binary is not notarized. A browser download carries the quarantine flag, and starting it then makes
+Gatekeeper show a "cannot be opened" dialog: until that dialog is answered, `lean11` hangs in the terminal without
+any output (it may sit behind other windows). Remove the flag from the unpacked folder before the first start:
+
+```
+xattr -dr com.apple.quarantine ~/Downloads/lean11-<version>-macos-arm64
+```
+
+If a start already hangs, close the dialog (or press Ctrl+C), remove the flag and start it again. Alternatively allow
+it under System Settings, Privacy & Security, or download with `curl`, which sets no quarantine flag:
+
+```
+curl -L https://github.com/solisinvictum/lean11/releases/download/v<version>/lean11-<version>-macos-arm64.tar.gz | tar xz
+```
 
 Or build it yourself, see [Build from source](#build-from-source).
 
